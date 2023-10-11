@@ -57,6 +57,8 @@ struct RenderState {
     int traceDepth;
     std::vector<glm::vec3> image;
     std::string imageName;
+
+    bool useDenoising;
 };
 
 struct PathSegment {

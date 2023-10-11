@@ -100,8 +100,52 @@ __global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* g
     }
 }
 
+__constant__ float dev_kernel[25];
+__constant__ int dev_offset[50];
+
+__device__ int xyToIndex(glm::ivec2 xy, glm::ivec2 resolution)
+{
+    return xy.x + (xy.y * resolution.x);
+}
+
+__global__ void denoiseKernel(glm::vec3* imageIn, glm::vec3* imageOut, GBufferPixel* gBuffer, glm::ivec2 resolution, int stepwidth)
+{
+    using namespace glm;
+
+    int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+    int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+
+    if (x >= resolution.x || y >= resolution.y)
+    {
+        return;
+    }
+
+    ivec2 curXY = ivec2(x, y);
+
+    vec3 sum = vec3(0);
+    vec3 cval = imageIn[xyToIndex(curXY, resolution)];
+
+    float cum_w = 0;
+    for (int i = 0; i < 25; ++i)
+    {
+        ivec2 offset = ivec2(dev_offset[i * 2], dev_offset[i * 2 + 1]);
+        ivec2 othXY = curXY + offset * stepwidth;
+        othXY = glm::max(ivec2(0, 0), glm::min(resolution - ivec2(1, 1), othXY));
+
+        vec3 ctmp = imageIn[xyToIndex(othXY, resolution)];
+
+        float weight = 1.f;
+        sum += ctmp * weight * dev_kernel[i];
+        cum_w += weight * dev_kernel[i];
+    }
+
+    imageOut[xyToIndex(curXY, resolution)] = sum / cum_w;
+}
+
 static Scene* hst_scene = NULL;
 static glm::vec3* dev_image = NULL;
+static glm::vec3* dev_image_denoised1 = NULL;
+static glm::vec3* dev_image_denoised2 = NULL;
 static Geom* dev_geoms = NULL;
 static Material* dev_materials = NULL;
 static PathSegment* dev_paths = NULL;
@@ -119,6 +163,11 @@ void pathtraceInit(Scene* scene)
     cudaMalloc(&dev_image, pixelcount * sizeof(glm::vec3));
     cudaMemset(dev_image, 0, pixelcount * sizeof(glm::vec3));
 
+    cudaMalloc(&dev_image_denoised1, pixelcount * sizeof(glm::vec3));
+    cudaMemset(dev_image_denoised1, 0, pixelcount * sizeof(glm::vec3));
+    cudaMalloc(&dev_image_denoised2, pixelcount * sizeof(glm::vec3));
+    cudaMemset(dev_image_denoised2, 0, pixelcount * sizeof(glm::vec3));
+
     cudaMalloc(&dev_paths, pixelcount * sizeof(PathSegment));
 
     cudaMalloc(&dev_geoms, scene->geoms.size() * sizeof(Geom));
@@ -132,7 +181,24 @@ void pathtraceInit(Scene* scene)
 
     cudaMalloc(&dev_gBuffer, pixelcount * sizeof(GBufferPixel));
 
-    // TODO: initialize any extra device memeory you need
+    float host_kernel[] = {
+        0.0039f, 0.0156f, 0.0234f, 0.0156f, 0.0039f,
+        0.0156f, 0.0625f, 0.0938f, 0.0625f, 0.0156f,
+        0.0234f, 0.0938f, 0.1406f, 0.0938f, 0.0234f,
+        0.0156f, 0.0625f, 0.0938f, 0.0625f, 0.0156f,
+        0.0039f, 0.0156f, 0.0234f, 0.0156f, 0.0039f
+    };
+
+    glm::ivec2 host_offset[] = {
+        glm::ivec2(-2, -2), glm::ivec2(-1, -2), glm::ivec2(0, -2), glm::ivec2(1, -2), glm::ivec2(2, -2),
+        glm::ivec2(-2, -1), glm::ivec2(-1, -1), glm::ivec2(0, -1), glm::ivec2(1, -1), glm::ivec2(2, -1),
+        glm::ivec2(-2, 0), glm::ivec2(-1, 0), glm::ivec2(0, 0), glm::ivec2(1, 0), glm::ivec2(2, 0),
+        glm::ivec2(-2, 1), glm::ivec2(-1, 1), glm::ivec2(0, 1), glm::ivec2(1, 1), glm::ivec2(2, 1),
+        glm::ivec2(-2, 2), glm::ivec2(-1, 2), glm::ivec2(0, 2), glm::ivec2(1, 2), glm::ivec2(2, 2)
+    };
+
+    cudaMemcpyToSymbol(dev_kernel, host_kernel, sizeof(host_kernel));
+    cudaMemcpyToSymbol(dev_offset, host_offset, sizeof(host_offset));
 
     checkCUDAError("pathtraceInit");
 }
@@ -140,6 +206,8 @@ void pathtraceInit(Scene* scene)
 void pathtraceFree()
 {
     cudaFree(dev_image);  // no-op if dev_image is null
+    cudaFree(dev_image_denoised1);
+    cudaFree(dev_image_denoised2);
     cudaFree(dev_paths);
     cudaFree(dev_geoms);
     cudaFree(dev_materials);
@@ -345,7 +413,7 @@ void pathtrace(int frame, int iter)
         (cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
 
     // 1D block for path tracing
-    const int blockSize1d = 128;
+    const int blockSize1d = 64;
 
     ///////////////////////////////////////////////////////////////////////////
 
@@ -432,12 +500,44 @@ void pathtrace(int frame, int iter)
     dim3 numBlocksPixels = (pixelcount + blockSize1d - 1) / blockSize1d;
     finalGather<<<numBlocksPixels, blockSize1d>>>(num_paths, dev_image, dev_paths);
 
+    const bool denoise = hst_scene->state.useDenoising;
+    if (denoise)
+    {
+        for (int i = 1; i <= 5; ++i)
+        {
+            int stepsize = 1 << (i - 1);
+
+            if (i == 1)
+            {
+                denoiseKernel<<<blocksPerGrid2d, blockSize2d>>>(
+                    dev_image,
+                    dev_image_denoised1,
+                    dev_gBuffer,
+                    hst_scene->state.camera.resolution,
+                    stepsize
+                );
+            }
+            else
+            {
+                denoiseKernel<<<blocksPerGrid2d, blockSize2d>>>(
+                    dev_image_denoised1,
+                    dev_image_denoised2,
+                    dev_gBuffer,
+                    hst_scene->state.camera.resolution,
+                    stepsize
+                );
+
+                std::swap(dev_image_denoised1, dev_image_denoised2);
+            }
+        }
+    }
+
     ///////////////////////////////////////////////////////////////////////////
 
     // CHECKITOUT: use dev_image as reference if you want to implement saving denoised images.
     // Otherwise, screenshots are also acceptable.
     // Retrieve image from GPU
-    cudaMemcpy(hst_scene->state.image.data(), dev_image,
+    cudaMemcpy(hst_scene->state.image.data(), denoise ? dev_image_denoised1 : dev_image,
         pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
 
     checkCUDAError("pathtrace");
@@ -465,5 +565,5 @@ void showImage(uchar4* pbo, int iter)
         (cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
 
     // Send results to OpenGL buffer for rendering
-    sendImageToPBO<<<blocksPerGrid2d, blockSize2d>>>(pbo, cam.resolution, iter, dev_image);
+    sendImageToPBO<<<blocksPerGrid2d, blockSize2d>>>(pbo, cam.resolution, iter, hst_scene->state.useDenoising ? dev_image_denoised1 : dev_image);
 }
