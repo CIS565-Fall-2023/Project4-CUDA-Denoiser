@@ -214,7 +214,7 @@ void drawGui(int windowWidth, int windowHeight) {
 
     camchanged |= ImGui::Checkbox("Denoise", &ui_denoise);
 
-    ImGui::SliderInt("Filter Size", &ui_filterSize, 0, 100);
+    camchanged |= ImGui::SliderInt("Filter Size", &ui_filterSize, 1, 5);
     ImGui::SliderFloat("Color Weight", &ui_colorWeight, 0.0f, 10.0f);
     ImGui::SliderFloat("Normal Weight", &ui_normalWeight, 0.0f, 10.0f);
     ImGui::SliderFloat("Position Weight", &ui_positionWeight, 0.0f, 10.0f);
@@ -258,6 +258,7 @@ void mainLoop() {
         drawGui(display_w, display_h);
 
         scene->state.useDenoising = ui_denoise;
+        scene->state.filterSize = ui_filterSize;
 
         glfwSwapBuffers(window);
     }

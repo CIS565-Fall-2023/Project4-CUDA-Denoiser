@@ -59,6 +59,7 @@ struct RenderState {
     std::string imageName;
 
     bool useDenoising;
+    int filterSize;
 };
 
 struct PathSegment {

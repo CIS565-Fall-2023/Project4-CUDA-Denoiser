@@ -503,7 +503,7 @@ void pathtrace(int frame, int iter)
     const bool denoise = hst_scene->state.useDenoising;
     if (denoise)
     {
-        for (int i = 1; i <= 5; ++i)
+        for (int i = 1; i <= hst_scene->state.filterSize; ++i)
         {
             int stepsize = 1 << (i - 1);
 
