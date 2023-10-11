@@ -73,7 +73,7 @@ __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution,
     }
 }
 
-__global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* gBuffer)
+__global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* gBuffer, bool showNormals)
 {
     int x = (blockIdx.x * blockDim.x) + threadIdx.x;
     int y = (blockIdx.y * blockDim.y) + threadIdx.y;
@@ -81,7 +81,17 @@ __global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* g
     if (x < resolution.x && y < resolution.y)   
     {
         int index = x + (y * resolution.x);
-        glm::vec3 col = ((gBuffer[index].nor + 1.f) / 2.f) * 255.f;
+        glm::vec3 col;
+        if (showNormals)
+        {
+            col = ((gBuffer[index].nor + 1.f) / 2.f);
+        }
+        else
+        {
+            col = gBuffer[index].pos;
+        }
+
+        col *= 255.f;
 
         pbo[index].x = col.x;
         pbo[index].y = col.y;
@@ -434,7 +444,7 @@ void pathtrace(int frame, int iter)
 }
 
 // CHECKITOUT: this kernel "post-processes" the gbuffer/gbuffers into something that you can visualize for debugging.
-void showGBuffer(uchar4* pbo)
+void showGBuffer(uchar4* pbo, bool showNormals)
 {
     const Camera& cam = hst_scene->state.camera;
     const dim3 blockSize2d(8, 8);
@@ -443,7 +453,7 @@ void showGBuffer(uchar4* pbo)
         (cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
 
     // CHECKITOUT: process the gbuffer results and send them to OpenGL buffer for visualization
-    gbufferToPBO<<<blocksPerGrid2d, blockSize2d>>>(pbo, cam.resolution, dev_gBuffer);
+    gbufferToPBO<<<blocksPerGrid2d, blockSize2d>>>(pbo, cam.resolution, dev_gBuffer, showNormals);
 }
 
 void showImage(uchar4* pbo, int iter)
