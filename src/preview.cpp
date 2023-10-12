@@ -210,15 +210,17 @@ void drawGui(int windowWidth, int windowHeight) {
         ui_hide = !ui_hide;
     }
 
+    ImGui::Text("application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+
     //ImGui::SliderInt("Iterations", &ui_iterations, 1, startupIterations);
-    ImGui::SliderInt("Iterations", &ui_iterations, 1, 100);
+    ImGui::SliderInt("Iterations", &ui_iterations, 1, 200);
 
     camchanged |= ImGui::Checkbox("Denoise", &ui_denoise);
 
     camchanged |= ImGui::SliderInt("Filter Size", &ui_filterSize, 1, 8);
-    camchanged |= ImGui::SliderFloat("Color Weight", &ui_colorWeight, 0.0f, 10.0f);
-    camchanged |= ImGui::SliderFloat("Normal Weight", &ui_normalWeight, 0.0f, 10.0f);
-    camchanged |= ImGui::SliderFloat("Position Weight", &ui_positionWeight, 0.0f, 10.0f);
+    camchanged |= ImGui::SliderFloat("Color Weight", &ui_colorWeight, 0.f, 1.f);
+    camchanged |= ImGui::SliderFloat("Normal Weight", &ui_normalWeight, 0.f, 1.f);
+    camchanged |= ImGui::SliderFloat("Position Weight", &ui_positionWeight, 0.f, 1.f);
 
     ImGui::Separator();
 

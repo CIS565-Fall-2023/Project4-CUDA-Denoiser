@@ -73,7 +73,7 @@ __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution,
     }
 }
 
-__global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* gBuffer, bool showNormals)
+__global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* gBuffer, bool showNormals, int iter)
 {
     int x = (blockIdx.x * blockDim.x) + threadIdx.x;
     int y = (blockIdx.y * blockDim.y) + threadIdx.y;
@@ -84,11 +84,11 @@ __global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* g
         glm::vec3 col;
         if (showNormals)
         {
-            col = ((gBuffer[index].nor + 1.f) / 2.f);
+            col = ((gBuffer[index].nor / (float)iter + 1.f) / 2.f);
         }
         else
         {
-            col = gBuffer[index].pos;
+            col = gBuffer[index].pos / (float)iter;
         }
 
         col *= 255.f;
@@ -148,7 +148,7 @@ __global__ void denoiseKernel(const glm::vec3* imageIn, glm::vec3* imageOut, GBu
 
         vec3 ntmp = gBufferPix.nor;
         t = nval - ntmp;
-        dist2 = glm::max(dot(t, t) / (stepwidth * stepwidth), 0.f);
+        dist2 = dot(t, t);
         float n_w = glm::min(exp(-(dist2) / n_phi), 1.f);
 
         vec3 ptmp = gBufferPix.pos;
@@ -258,12 +258,15 @@ __global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, Path
         int index = x + (y * cam.resolution.x);
         PathSegment& segment = pathSegments[index];
 
+        thrust::default_random_engine rng = makeSeededRandomEngine(iter, index, 0);
+        thrust::uniform_real_distribution<float> u01(0, 1);
+
         segment.ray.origin = cam.position;
         segment.color = glm::vec3(1.0f, 1.0f, 1.0f);
 
         segment.ray.direction = glm::normalize(cam.view
-            - cam.right * cam.pixelLength.x * ((float)x - (float)cam.resolution.x * 0.5f)
-            - cam.up * cam.pixelLength.y * ((float)y - (float)cam.resolution.y * 0.5f)
+            - cam.right * cam.pixelLength.x * ((float)x - (float)cam.resolution.x * 0.5f + u01(rng))
+            - cam.up * cam.pixelLength.y * ((float)y - (float)cam.resolution.y * 0.5f + u01(rng))
         );
 
         segment.pixelIndex = index;
@@ -402,8 +405,8 @@ __global__ void generateGBuffer(
     const PathSegment& segment = pathSegments[idx];
     const ShadeableIntersection& isect = shadeableIntersections[idx];
 
-    gBuffer[idx].pos = segment.ray.origin + segment.ray.direction * isect.t;
-    gBuffer[idx].nor = isect.surfaceNormal;
+    gBuffer[idx].pos += segment.ray.origin + segment.ray.direction * isect.t;
+    gBuffer[idx].nor += isect.surfaceNormal;
 }
 
 // Add the current iteration's output to the overall image
@@ -416,6 +419,13 @@ __global__ void finalGather(int nPaths, glm::vec3* image, PathSegment* iteration
         PathSegment iterationPath = iterationPaths[index];
         image[iterationPath.pixelIndex] += iterationPath.color;
     }
+}
+
+void clearGBuffer()
+{
+    const Camera& cam = hst_scene->state.camera;
+    const int pixelcount = cam.resolution.x * cam.resolution.y;
+    cudaMemset(dev_gBuffer, 0, pixelcount * sizeof(GBufferPixel));
 }
 
 /**
@@ -479,7 +489,6 @@ void pathtrace(int frame, int iter)
     // Shoot ray into scene, bounce between objects, push shading chunks
 
   // Empty gbuffer
-    cudaMemset(dev_gBuffer, 0, pixelcount * sizeof(GBufferPixel));
 
     // clean shading chunks
     cudaMemset(dev_intersections, 0, pixelcount * sizeof(ShadeableIntersection));
@@ -576,7 +585,7 @@ void pathtrace(int frame, int iter)
 }
 
 // CHECKITOUT: this kernel "post-processes" the gbuffer/gbuffers into something that you can visualize for debugging.
-void showGBuffer(uchar4* pbo, bool showNormals)
+void showGBuffer(uchar4* pbo, bool showNormals, int iter)
 {
     const Camera& cam = hst_scene->state.camera;
     const dim3 blockSize2d(8, 8);
@@ -585,7 +594,7 @@ void showGBuffer(uchar4* pbo, bool showNormals)
         (cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
 
     // CHECKITOUT: process the gbuffer results and send them to OpenGL buffer for visualization
-    gbufferToPBO<<<blocksPerGrid2d, blockSize2d>>>(pbo, cam.resolution, dev_gBuffer, showNormals);
+    gbufferToPBO<<<blocksPerGrid2d, blockSize2d>>>(pbo, cam.resolution, dev_gBuffer, showNormals, iter);
 }
 
 void showImage(uchar4* pbo, int iter)
