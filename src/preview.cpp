@@ -215,7 +215,7 @@ void drawGui(int windowWidth, int windowHeight) {
 
     camchanged |= ImGui::Checkbox("Denoise", &ui_denoise);
 
-    camchanged |= ImGui::SliderInt("Filter Size", &ui_filterSize, 1, 5);
+    camchanged |= ImGui::SliderInt("Filter Size", &ui_filterSize, 1, 8);
     camchanged |= ImGui::SliderFloat("Color Weight", &ui_colorWeight, 0.0f, 10.0f);
     camchanged |= ImGui::SliderFloat("Normal Weight", &ui_normalWeight, 0.0f, 10.0f);
     camchanged |= ImGui::SliderFloat("Position Weight", &ui_positionWeight, 0.0f, 10.0f);
