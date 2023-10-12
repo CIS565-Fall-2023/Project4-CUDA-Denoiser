@@ -62,3 +62,11 @@ The difference in the reflective sphere shown above is an unfortunate side effec
 <img src="img/renders/sphere_regular.png" width="50%" /><img src="img/renders/sphere_denoised.png" width="50%" />
 
 Because the sphere has gradual changes in position and normals, neither of those weighting strategies come into effect here, meaning the denoiser blurs the sphere too strongly. This means the denoiser is likely more effective for simple surfaces (e.g. diffuse) and less effective for complex surfaces involving lots of reflection/refraction. One possible way to fix this would be to not write to the G-buffer on a specular bounce and instead store the position and normal of the next bounce.
+
+### Scene Comparisons
+
+Lastly, I compared the denoising filter's quality on two different scenes:
+
+<img src="img/renders/cornell_ceil_denoised_filter5_100spp.png" width="50%" /><img src="img/renders/cornell_denoised_filter5_100spp.png" width="50%" />
+
+The scene on the left has a much larger light, which means pixels will be brighter and likely less noisy on average. Both images were rendered with filter size 5 and 100 samples per pixel. While the plain diffuse walls are relatively noise-free in both images, the image on the right has clear artifacts on the sphere's edges and near the light at the top, likely due to increased noise in the raw image. Additionally, the previously mentioned issues with the specular sphere are present in both images.
