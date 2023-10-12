@@ -61,4 +61,4 @@ The difference in the reflective sphere shown above is an unfortunate side effec
 
 <img src="img/renders/sphere_regular.png" width="50%" /><img src="img/renders/sphere_denoised.png" width="50%" />
 
-Because the sphere has gradual changes in position and normals, neither of those weighting strategies come into effect here, meaning the denoiser blurs the sphere too much. This means the denoiser is likely more effective for simple surfaces (e.g. diffuse) and less effective for complex surfaces involving lots of reflection/refraction. One possible way to fix this would be to not write to the G-buffer on a specular bounce and instead store the position and normal of the next bounce.
+Because the sphere has gradual changes in position and normals, neither of those weighting strategies come into effect here, meaning the denoiser blurs the sphere too strongly. This means the denoiser is likely more effective for simple surfaces (e.g. diffuse) and less effective for complex surfaces involving lots of reflection/refraction. One possible way to fix this would be to not write to the G-buffer on a specular bounce and instead store the position and normal of the next bounce.
