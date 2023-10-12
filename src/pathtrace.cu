@@ -300,7 +300,10 @@ __global__ void computeIntersections(
 	if (path_index < num_paths)
 	{
 		PathSegment pathSegment = pathSegments[path_index];
-
+		if (pathSegment.remainingBounces <= 0)
+		{
+			return;
+		}
 		float t;
 		glm::vec3 intersect_point;
 		glm::vec3 normal;
@@ -374,7 +377,7 @@ __global__ void kernel_sample_f(int iter,
 	Intersection isect = isects[idx];
 	PathSegment &path = paths[idx];
 
-	if (path.remainingBounces == 0)
+	if (path.remainingBounces <= 0)
 	{
 		return;
 	}

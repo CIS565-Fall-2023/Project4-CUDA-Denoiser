@@ -298,7 +298,7 @@ __host__ __device__ void sample_f(PathSegment &pathSegment,
 #if ENABLE_RUSSIAN_ROULETTE
     if (pathSegment.remainingBounces > 0)
     {
-        float terminationProbability = std::max(pathSegment.accum_throughput.r, std::max(pathSegment.accum_throughput.g, pathSegment.accum_throughput.b));
+        float terminationProbability = glm::max(pathSegment.accum_throughput.r, glm::max(pathSegment.accum_throughput.g, pathSegment.accum_throughput.b));
         if (u01(rng) > terminationProbability)
         {
             // Terminate this ray
