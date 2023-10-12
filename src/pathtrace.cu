@@ -147,12 +147,12 @@ __global__ void denoiseKernel(const glm::vec3* imageIn, glm::vec3* imageOut, GBu
         gBufferPix = gBuffer[othIdx];
 
         vec3 ntmp = gBufferPix.nor;
-        t = nval - ntmp;
+        t = (nval - ntmp) / (float)iter;
         dist2 = dot(t, t);
         float n_w = glm::min(exp(-(dist2) / n_phi), 1.f);
 
         vec3 ptmp = gBufferPix.pos;
-        t = pval - ptmp;
+        t = (pval - ptmp) / (float)iter;
         dist2 = dot(t, t);
         float p_w = glm::min(exp(-(dist2) / p_phi), 1.f);
 
