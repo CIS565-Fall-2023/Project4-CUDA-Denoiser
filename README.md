@@ -33,12 +33,8 @@ From this graph, we can see that for all tested resolutions, the time per frame 
 
 This brings up a question: does an increased filter size necessarily mean better results? Here are some test images:
 
-| Filter Size | Image |
-|-------------|-------|
-| None        | <img src="img/renders/cornell_ceil_regular_100spp.png" width="50%" /> |
-| 1           | <img src="img/renders/cornell_ceil_denoised_filter1_100spp.png" width="50%" /> |
-| 3           | <img src="img/renders/cornell_ceil_denoised_filter3_100spp.png" width="50%" /> |
-| 5           | <img src="img/renders/cornell_ceil_denoised_filter5_100spp.png" width="50%" /> |
-| 7           | <img src="img/renders/cornell_ceil_denoised_filter7_100spp.png" width="50%" /> |
+| None | 1 | 3 | 5 | 7 |
+|------|---|---|---|---|
+| <img src="img/renders/cornell_ceil_regular_100spp.png" /> | <img src="img/renders/cornell_ceil_denoised_filter1_100spp.png" /> | <img src="img/renders/cornell_ceil_denoised_filter3_100spp.png" /> | <img src="img/renders/cornell_ceil_denoised_filter5_100spp.png" /> | <img src="img/renders/cornell_ceil_denoised_filter7_100spp.png" /> |
 
 ### Qualitative Analysis
