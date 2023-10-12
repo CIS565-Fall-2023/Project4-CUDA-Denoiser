@@ -210,14 +210,15 @@ void drawGui(int windowWidth, int windowHeight) {
         ui_hide = !ui_hide;
     }
 
-    ImGui::SliderInt("Iterations", &ui_iterations, 1, startupIterations);
+    //ImGui::SliderInt("Iterations", &ui_iterations, 1, startupIterations);
+    ImGui::SliderInt("Iterations", &ui_iterations, 1, 100);
 
     camchanged |= ImGui::Checkbox("Denoise", &ui_denoise);
 
     camchanged |= ImGui::SliderInt("Filter Size", &ui_filterSize, 1, 5);
-    ImGui::SliderFloat("Color Weight", &ui_colorWeight, 0.0f, 10.0f);
-    ImGui::SliderFloat("Normal Weight", &ui_normalWeight, 0.0f, 10.0f);
-    ImGui::SliderFloat("Position Weight", &ui_positionWeight, 0.0f, 10.0f);
+    camchanged |= ImGui::SliderFloat("Color Weight", &ui_colorWeight, 0.0f, 10.0f);
+    camchanged |= ImGui::SliderFloat("Normal Weight", &ui_normalWeight, 0.0f, 10.0f);
+    camchanged |= ImGui::SliderFloat("Position Weight", &ui_positionWeight, 0.0f, 10.0f);
 
     ImGui::Separator();
 
@@ -259,6 +260,10 @@ void mainLoop() {
 
         scene->state.useDenoising = ui_denoise;
         scene->state.filterSize = ui_filterSize;
+
+        scene->state.c_phi = ui_colorWeight;
+        scene->state.n_phi = ui_normalWeight;
+        scene->state.p_phi = ui_positionWeight;
 
         glfwSwapBuffers(window);
     }

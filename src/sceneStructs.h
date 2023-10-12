@@ -60,6 +60,10 @@ struct RenderState {
 
     bool useDenoising;
     int filterSize;
+
+    float c_phi;
+    float n_phi;
+    float p_phi;
 };
 
 struct PathSegment {

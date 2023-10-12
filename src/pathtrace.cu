@@ -108,7 +108,8 @@ __device__ int xyToIndex(glm::ivec2 xy, glm::ivec2 resolution)
     return xy.x + (xy.y * resolution.x);
 }
 
-__global__ void denoiseKernel(glm::vec3* imageIn, glm::vec3* imageOut, GBufferPixel* gBuffer, glm::ivec2 resolution, int stepwidth)
+__global__ void denoiseKernel(const glm::vec3* imageIn, glm::vec3* imageOut, GBufferPixel* gBuffer, glm::ivec2 resolution, int stepwidth,
+    float c_phi, float n_phi, float p_phi, int iter)
 {
     using namespace glm;
 
@@ -123,7 +124,11 @@ __global__ void denoiseKernel(glm::vec3* imageIn, glm::vec3* imageOut, GBufferPi
     ivec2 curXY = ivec2(x, y);
 
     vec3 sum = vec3(0);
-    vec3 cval = imageIn[xyToIndex(curXY, resolution)];
+    int curIdx = xyToIndex(curXY, resolution);
+    vec3 cval = imageIn[curIdx];
+    GBufferPixel gBufferPix = gBuffer[curIdx];
+    vec3 nval = gBufferPix.nor;
+    vec3 pval = gBufferPix.pos;
 
     float cum_w = 0;
     for (int i = 0; i < 25; ++i)
@@ -132,9 +137,26 @@ __global__ void denoiseKernel(glm::vec3* imageIn, glm::vec3* imageOut, GBufferPi
         ivec2 othXY = curXY + offset * stepwidth;
         othXY = glm::max(ivec2(0, 0), glm::min(resolution - ivec2(1, 1), othXY));
 
-        vec3 ctmp = imageIn[xyToIndex(othXY, resolution)];
+        int othIdx = xyToIndex(othXY, resolution);
 
-        float weight = 1.f;
+        vec3 ctmp = imageIn[othIdx];
+        vec3 t = (cval - ctmp) / (float)iter;
+        float dist2 = dot(t, t);
+        float c_w = glm::min(exp(-(dist2) / c_phi), 1.f);
+
+        gBufferPix = gBuffer[othIdx];
+
+        vec3 ntmp = gBufferPix.nor;
+        t = nval - ntmp;
+        dist2 = glm::max(dot(t, t) / (stepwidth * stepwidth), 0.f);
+        float n_w = glm::min(exp(-(dist2) / n_phi), 1.f);
+
+        vec3 ptmp = gBufferPix.pos;
+        t = pval - ptmp;
+        dist2 = dot(t, t);
+        float p_w = glm::min(exp(-(dist2) / p_phi), 1.f);
+
+        float weight = c_w * n_w * p_w;
         sum += ctmp * weight * dev_kernel[i];
         cum_w += weight * dev_kernel[i];
     }
@@ -500,10 +522,12 @@ void pathtrace(int frame, int iter)
     dim3 numBlocksPixels = (pixelcount + blockSize1d - 1) / blockSize1d;
     finalGather<<<numBlocksPixels, blockSize1d>>>(num_paths, dev_image, dev_paths);
 
-    const bool denoise = hst_scene->state.useDenoising;
+    const auto& renderState = hst_scene->state;
+
+    const bool denoise = renderState.useDenoising;
     if (denoise)
     {
-        for (int i = 1; i <= hst_scene->state.filterSize; ++i)
+        for (int i = 1; i <= renderState.filterSize; ++i)
         {
             int stepsize = 1 << (i - 1);
 
@@ -514,7 +538,11 @@ void pathtrace(int frame, int iter)
                     dev_image_denoised1,
                     dev_gBuffer,
                     hst_scene->state.camera.resolution,
-                    stepsize
+                    stepsize,
+                    hst_scene->state.c_phi,
+                    hst_scene->state.n_phi,
+                    hst_scene->state.p_phi,
+                    iter
                 );
             }
             else
@@ -524,7 +552,11 @@ void pathtrace(int frame, int iter)
                     dev_image_denoised2,
                     dev_gBuffer,
                     hst_scene->state.camera.resolution,
-                    stepsize
+                    stepsize,
+                    hst_scene->state.c_phi,
+                    hst_scene->state.n_phi,
+                    hst_scene->state.p_phi,
+                    iter
                 );
 
                 std::swap(dev_image_denoised1, dev_image_denoised2);
