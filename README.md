@@ -45,8 +45,20 @@ There are differences in the first four images (up to and including size 5), but
 
 ### Total Iterations Needed
 
-TODO: num iterations needed for "acceptably smooth", include image diff
+One interesting comparison is the number of iterations requried for an "acceptably smooth" result with and without denoising.
+
+<img src="img/renders/cornell_ceil_regular_2000spp.png" width="50%" /><img src="img/renders/cornell_ceil_denoised_filter5_100spp.png" width="50%" />
+
+On the left is a non-denoised render with 2000 samples per pixel, and on the right is a denoised render with filter size 5 and 100 samples per pixel. Though they don't look exactly the same (there's a bit of noise in the left image and some aliasing in the right image), they both look smooth. This means denoising can reduce the number of samples required by as much as 20x. The image diff looks like so:
+
+![](img/renders/smooth_diff.png)
+
+Other than on the reflective sphere and in the corners, the images are almost identical.
 
 ### Material Comparisons
 
-TODO: compare diffuse and specular materials, maybe include image diff or zoomed in comparison
+The difference in the reflective sphere shown above is an unfortunate side effect of how the filter works. Here is a more detailed comparison:
+
+<img src="img/renders/sphere_regular.png" width="50%" /><img src="img/renders/sphere_denoised.png" width="50%" />
+
+Because the sphere has gradual changes in position and normals, neither of those weighting strategies come into effect here, meaning the denoiser blurs the sphere too much. This means the denoiser is likely more effective for simple surfaces (e.g. diffuse) and less effective for complex surfaces involving lots of reflection/refraction. One possible way to fix this would be to not write to the G-buffer on a specular bounce and instead store the position and normal of the next bounce.
