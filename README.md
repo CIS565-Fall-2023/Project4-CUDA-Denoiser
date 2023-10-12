@@ -33,8 +33,20 @@ From this graph, we can see that for all tested resolutions, the time per frame 
 
 This brings up a question: does an increased filter size necessarily mean better results? Here are some test images:
 
-| None | 1 | 3 | 5 | 7 |
-|------|---|---|---|---|
-| <img src="img/renders/cornell_ceil_regular_100spp.png" /> | <img src="img/renders/cornell_ceil_denoised_filter1_100spp.png" /> | <img src="img/renders/cornell_ceil_denoised_filter3_100spp.png" /> | <img src="img/renders/cornell_ceil_denoised_filter5_100spp.png" /> | <img src="img/renders/cornell_ceil_denoised_filter7_100spp.png" /> |
+| Filter Size | Image |
+|-------------|-------|
+| None        | ![](img/renders/cornell_ceil_regular_100spp.png) |
+| 1           | ![](img/renders/cornell_ceil_denoised_filter1_100spp.png) |
+| 3           | ![](img/renders/cornell_ceil_denoised_filter3_100spp.png) |
+| 5           | ![](img/renders/cornell_ceil_denoised_filter5_100spp.png) |
+| 7           | ![](img/renders/cornell_ceil_denoised_filter7_100spp.png) |
 
-### Qualitative Analysis
+There are differences in the first four images (up to and including size 5), but after size 5 the difference is negligible. This is because pixels that are very far away (e.g. $\frac{1}{2} \cdot 5 \cdot 2^{7-1} = 160$ pixels away for filter size 7) have very different positions and likely very different colors and normals, so their weights will be low.
+
+### Total Iterations Needed
+
+TODO: num iterations needed for "acceptably smooth", include image diff
+
+### Material Comparisons
+
+TODO: compare diffuse and specular materials, maybe include image diff or zoomed in comparison
