@@ -20,15 +20,17 @@
 #include <bitset>
 
 #define ERRORCHECK 1
-#define DENOISING 0
-#define SVGF 0
+#define DENOISING 1
+#define SVGF 1
 #define ANTIALISING 0
 #define CACHEFIRSTRAY 1
 #define DEFOCUSING 0
 #define BVHON 1
 #define DIRECTLIGHTING 1
 
-#define LEN 7.0f
+#define FILTERRADIUS 10
+
+#define LEN 9.0f
 
 #define FILENAME (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 #define checkCUDAError(msg) checkCUDAErrorFn(msg, FILENAME, __LINE__)
@@ -64,14 +66,24 @@ __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution,
 	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
 	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
 
+	float a = 2.51f;
+	float b = 0.03f;
+	float c = 2.43f;
+	float d = 0.59f;
+	float e = 0.14f;
+
 	if (x < resolution.x && y < resolution.y) {
 		int index = x + (y * resolution.x);
 		glm::vec3 pix = image[index];
 
 		glm::ivec3 color;
-		color.x = glm::clamp((int)(pix.x / iter * 255.0), 0, 255);
-		color.y = glm::clamp((int)(pix.y / iter * 255.0), 0, 255);
-		color.z = glm::clamp((int)(pix.z / iter * 255.0), 0, 255);
+
+		pix = pix / (float)iter;
+
+		color.x = glm::clamp((int)(pix.x * 255.0), 0, 255);
+		color.y = glm::clamp((int)(pix.y * 255.0), 0, 255);
+		color.z = glm::clamp((int)(pix.z * 255.0), 0, 255);
+
 
 		// Each thread writes one pixel location in the texture (textel)
 		pbo[index].w = 0;
@@ -103,6 +115,7 @@ static glm::vec3* dev_normalBuffer;
 static glm::vec3* dev_albedoBuffer;
 static float* dev_zBuffer;
 static int* dev_objIndex;
+static int* dev_isSpecular;
 
 int lightSrcNumber;
 
@@ -510,6 +523,62 @@ __device__ glm::vec3 getLightDir(glm::vec3 origin, Geom lightSource)
 	return glm::normalize(sourcePoint - origin);
 }
 
+__global__ void initSpecularBuffer(
+	int num_paths
+	, ShadeableIntersection* shadeableIntersections
+	, PathSegment* pathSegments
+	, Material* materials
+	, Texture* textures
+	, glm::vec3* texdata
+	, int* isSpecular
+	, glm::vec3* normalBuffer
+	, glm::vec3* albedoBuffer
+)
+{
+	int idx = blockIdx.x * blockDim.x + threadIdx.x;
+	if (idx < num_paths)
+	{
+		int pixelIndex = pathSegments[idx].pixelIndex;
+		glm::vec3 oriAlbedo = albedoBuffer[pixelIndex];
+		if (isSpecular[pixelIndex] == 1)
+		{
+			ShadeableIntersection intersection = shadeableIntersections[idx];
+			if (intersection.t > 0.0f && intersection.t < FLT_MAX)
+			{
+				Material material = materials[intersection.materialId];
+				normalBuffer[pixelIndex] = intersection.surfaceNormal;
+				if (material.emittance > 0.0f)
+				{
+					albedoBuffer[pixelIndex] = material.color * material.emittance;
+				}
+				else
+				{
+					int texID = intersection.textureId;
+					glm::vec2 uv = intersection.interUV;
+					if (texID > -1 && intersection.hasUV == true)
+					{
+						Texture tmpTex = textures[texID];
+						int i = tmpTex.width * intersection.interUV[0] - 0.5f;
+						int j = tmpTex.height * intersection.interUV[1] - 0.5f;
+						int colorIndex = j * tmpTex.width + i + tmpTex.start;
+						albedoBuffer[pixelIndex] = texdata[colorIndex] * material.color;
+					}
+					else
+					{
+						albedoBuffer[pixelIndex] = material.color;
+					}
+				}
+			}
+			else
+			{
+				normalBuffer[pixelIndex] = glm::vec3(0.0f, 0.0f, 0.0f);
+				albedoBuffer[pixelIndex] = glm::vec3(0.0f, 0.0f, 0.0f);
+			}
+			albedoBuffer[pixelIndex] = albedoBuffer[pixelIndex] * oriAlbedo;
+		}
+	}
+}
+
 __global__ void initBufferData(
 	int num_paths
 	, ShadeableIntersection* shadeableIntersections
@@ -520,6 +589,7 @@ __global__ void initBufferData(
 	, glm::vec3* albedoBuffer
 	, glm::vec3* normalBuffer
 	, float* zBuffer
+	, int* isSpecular
 )
 {
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -528,7 +598,7 @@ __global__ void initBufferData(
 		ShadeableIntersection intersection = shadeableIntersections[idx];
 		glm::vec3 tmpColor;
 
-		if (intersection.t > 0.0f) { // if the intersection exists...
+		if (intersection.t > 0.0f && intersection.t < FLT_MAX) { // if the intersection exists...
 		  // Set up the RNG
 		  // LOOK: this is how you use thrust's RNG! Please look at
 		  // makeSeededRandomEngine as well.
@@ -538,12 +608,13 @@ __global__ void initBufferData(
 			zBuffer[idx] = interPoint.z;
 			// If the material indicates that the object was a light, "light" the ray
 			if (material.emittance > 0.0f) {
-				albedoBuffer[idx] = material.color * material.emittance;
+				albedoBuffer[idx] = material.color * material.emittance * 5.0f;
 			}
-			// Otherwise, do some pseudo-lighting computation. This is actually more
-			// like what you would expect from shading in a rasterizer like OpenGL.
-			// TODO: replace this! you should be able to start with basically a one-liner
 			else {
+				if (material.hasReflective)
+				{
+					isSpecular[pathSegments[idx].pixelIndex] = 1;
+				}
 				int texID = intersection.textureId;
 				glm::vec2 uv = intersection.interUV;
 				if (texID > -1 && intersection.hasUV == true)
@@ -568,7 +639,7 @@ __global__ void initBufferData(
 
 			albedoBuffer[idx] = glm::vec3(0.0f);
 			normalBuffer[idx] = glm::vec3(0.0f, 0.0f, 0.0f);
-			zBuffer[idx] = -FLT_MAX;
+			zBuffer[idx] = -1.0f;
 		}
 	}
 }
@@ -607,9 +678,6 @@ __global__ void shadeMaterial(
 				pathSegments[idx].color *= c * material.emittance;
 				pathSegments[idx].remainingBounces = 0;
 			}
-			// Otherwise, do some pseudo-lighting computation. This is actually more
-			// like what you would expect from shading in a rasterizer like OpenGL.
-			// TODO: replace this! you should be able to start with basically a one-liner
 			else {
 				pathSegments[idx].color *= u01(rng); // apply some noise because why not*/
 				glm::vec3 interPoint = pathSegments[idx].ray.origin + intersection.t * pathSegments[idx].ray.direction;
@@ -658,7 +726,7 @@ __global__ void naiveFilter(int nPaths, glm::vec3* image, glm::vec3* postImage, 
 	int index = (blockIdx.x * blockDim.x) + threadIdx.x;
 	if (index < nPaths)
 	{
-		int radius = 1;
+		int radius = FILTERRADIUS;
 		//a 3x3 filter
 		int y = index / width;
 		int x = index - width * y;
@@ -685,49 +753,72 @@ __global__ void naiveFilter(int nPaths, glm::vec3* image, glm::vec3* postImage, 
 
 //Extremely Blur and Looks Fake!
 __global__ void jointBilateralFilter(int nPaths, glm::vec3* image, glm::vec3* postImage, int width, int height, 
-	glm::vec3* normalBuffer, glm::vec3* albedoBuffer)
+	glm::vec3* normalBuffer, glm::vec3* albedoBuffer, float* zBuffer, int interval)
 {
 	int index = (blockIdx.x * blockDim.x) + threadIdx.x;
 	if (index < nPaths)
 	{
-		int radius = 7;
+		int radius = FILTERRADIUS;
+		// inerval is used to compute the A-trous filter
 		int y = index / width;
 		int x = index - width * y;
-		int xStart = thrust::max(0, x - radius);
-		int xEnd = thrust::min(x + radius, width - 1);
-		int yStart = thrust::max(0, y - radius);
-		int yEnd = thrust::min(y + radius, height - 1);
+		int xStart = thrust::max(-(int(x / interval)), -radius) * interval + x;
+		int xEnd = thrust::min((width - 1 - x) / interval, radius) * interval + x;
+		int yStart = thrust::max(-(int(y / interval)), -radius) * interval + y;
+		int yEnd = thrust::min((height - 1 - y) / interval, radius) * interval + y;
 		float g = 0;
 		float totalWeight = 0.0f;
 		glm::vec3 weightedColor = glm::vec3(0.0f, 0.0f, 0.0f);
-		for (int i = yStart; i < yEnd + 1; i++)
+		for (int i = yStart; i < yEnd + 1; i = i + interval)
 		{
-			for (int j = xStart; j < xEnd + 1; j++)
+			for (int j = xStart; j < xEnd + 1; j = j + interval)
 			{
-				glm::vec2 indexDiff = (glm::vec2(i, j) - glm::vec2(y, x)) * 0.143f;
-				glm::vec3 normalDiff = normalBuffer[i * width + j] - normalBuffer[index];
-				glm::vec3 albedoDiff = albedoBuffer[i * width + j] - albedoBuffer[index];
+				// set1 0.52, 0.8, 0.9
+				// set2 0.01 1.0 0.01
+				glm::vec2 indexDiff = (glm::vec2(i, j) - glm::vec2(y, x)) * 0.1f;
+				glm::vec3 normalDiff = (normalBuffer[i * width + j] - normalBuffer[index]) * 1.0f;
+				glm::vec3 albedoDiff = (albedoBuffer[i * width + j] - albedoBuffer[index]) * 1.0f;
 				float sqIndex = glm::dot(indexDiff, indexDiff);
 				float sqNormal = glm::dot(normalDiff, normalDiff);
 				float sqAlbedo = glm::dot(albedoDiff, albedoDiff);
+
+				//float zDiff = (zBuffer[i * width + j] - zBuffer[index]) * 0.1f;
+
 				float weight = exp(-sqIndex / 1.0f - sqNormal / 1.0f - sqAlbedo / 1.0f);
+
+				//float weight = exp(-sqIndex / 1.0f - zDiff / 1.0f - sqAlbedo / 1.0f);
+
 				weightedColor += image[i * width + j] * weight;
 				totalWeight += weight;
 			}
 		}
-		postImage[index] = weightedColor / totalWeight;
+		postImage[index] = weightedColor / totalWeight;;
 	}
 }
 
 // Add the current iteration's output to the overall image
-__global__ void finalGather(int nPaths, glm::vec3* image, PathSegment* iterationPaths)
+__global__ void finalGather(int iter, int nPaths, glm::vec3* image, PathSegment* iterationPaths)
 {
 	int index = (blockIdx.x * blockDim.x) + threadIdx.x;
 
 	if (index < nPaths)
 	{
+		float corr = 1.3f;
+		if (iter > 10)
+			corr = 1.0f;
 		PathSegment iterationPath = iterationPaths[index];
-		image[iterationPath.pixelIndex] += iterationPath.color;
+
+		float a = 2.51f;
+		float b = 0.03f;
+		float c = 2.43f;
+		float d = 0.59f;
+		float e = 0.14f;
+
+		glm::vec3 pix = iterationPath.color;
+		pix.x = (pix.x * (a * pix.x + b)) / (pix.x * (c * pix.x + d) + e);
+		pix.y = (pix.y * (a * pix.y + b)) / (pix.y * (c * pix.y + d) + e);
+		pix.z = (pix.z * (a * pix.z + b)) / (pix.z * (c * pix.z + d) + e);
+		image[iterationPath.pixelIndex] += pix;
 	}
 }
 
@@ -816,7 +907,13 @@ void pathtrace(uchar4* pbo, int frame, int iter) {
 			if (depth == 0)
 			{
 				//write to cache
+				//should update normal buffer later on to deal with specular object!
 				cudaMemcpy(dev_cachedintersections, dev_intersections, num_paths * sizeof(ShadeableIntersection), cudaMemcpyDeviceToDevice);
+				if (hst_scene->state.traceDepth > 1)
+				{
+					cudaMalloc(&dev_isSpecular, pixelcount * sizeof(int));
+					cudaMemset(dev_isSpecular, 0, pixelcount * sizeof(int));
+				}
 				initBufferData << <numblocksPathSegmentTracing, blockSize1d >> > (
 					tempPaths
 					, dev_intersections
@@ -827,7 +924,23 @@ void pathtrace(uchar4* pbo, int frame, int iter) {
 					, dev_albedoBuffer
 					, dev_normalBuffer
 					, dev_zBuffer
+					, dev_isSpecular
 				);
+			}
+			else if (depth == 1) // record the first bounce normal for the specular object
+			{
+				initSpecularBuffer << <numblocksPathSegmentTracing, blockSize1d >> > (
+					tempPaths
+					, dev_intersections
+					, dev_paths
+					, dev_materials
+					, dev_texes
+					, dev_textures
+					, dev_isSpecular
+					, dev_normalBuffer
+					, dev_albedoBuffer
+				);
+				cudaFree(dev_isSpecular);
 			}
 		}
 		else
@@ -893,13 +1006,18 @@ void pathtrace(uchar4* pbo, int frame, int iter) {
 	}
 	// Assemble this iteration and apply it to the image
 	dim3 numBlocksPixels = (pixelcount + blockSize1d - 1) / blockSize1d;
-	finalGather << <numBlocksPixels, blockSize1d >> > (num_paths, dev_image, dev_paths);
+	finalGather << <numBlocksPixels, blockSize1d >> > (iter, num_paths, dev_image, dev_paths);
 #if DENOISING
 	int width = cam.resolution.x;
 	int height = cam.resolution.y;
+	// interval range [0, 2)
+	//int interval = min(iter, 400);
+	//if want gaussian filter just change to int interval = 1; // iter change
+	int interval = 1;
+	//int interval = min((int)ceil(iter / 3.0f), 300); // iter change
 #if SVGF
 	jointBilateralFilter << <numBlocksPixels, blockSize1d >> > (num_paths, dev_image, dev_postImage, width, height,
-	dev_normalBuffer, dev_albedoBuffer);
+	dev_normalBuffer, dev_albedoBuffer, dev_zBuffer, interval);
 #else
 	naiveFilter << <numBlocksPixels, blockSize1d >> > (num_paths, dev_image, dev_postImage, width, height);
 #endif
