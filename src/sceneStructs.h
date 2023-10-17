@@ -223,19 +223,19 @@ struct Intersection {
 struct BVHNode
 {
     // Based on PBRT: https://pbr-book.org/3ed-2018/Primitives_and_Intersection_Acceleration/Bounding_Volume_Hierarchies
-    AABB bounds;
+    AABB bounds;            // 6 floats = 6 * 4 = 24 bytes
     //BVHNode* left;
     //BVHNode* right;
+    int rightChildIdx;      // 4 bytes = 24+4 = 28 bytes
+    int triIdx;             // 4 bytes = 24+4 = 32 bytes    // we're fitting one single block!
+    //int nodeIdx;
 
 #if DEBUG
     int leftChildIdx;
-    // no need to store this value in release because we don't really need it
+    int splitAxis;
+    // no need to store this value in release because we don't really need them
     // im only enabling it in debug mode to be able to test stuff!
 #endif
-    int rightChildIdx;
-    int splitAxis;
-    int triIdx;
-    //int nodeIdx;
 
     void initAsLeafNode(int triIdx, const AABB& bounds)
     {
@@ -251,10 +251,10 @@ struct BVHNode
     {
 #if DEBUG
         this->leftChildIdx = leftChildIdx;
+        this->splitAxis = splitAxis;
 #endif
         this->rightChildIdx = rightChildIdx;
         bounds = AABB::combine(bvhNodes[leftChildIdx].bounds, bvhNodes[rightChildIdx].bounds);
-        this->splitAxis = splitAxis;
         this->triIdx = -1;  // no triangle here
     }
 };
