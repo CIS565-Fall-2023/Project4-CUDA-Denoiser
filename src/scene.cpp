@@ -398,6 +398,17 @@ void Scene::LoadMaterialsFromMTL(const MtlMaterial& mtl_material, const std::fil
             material.data.textures.normal_tex.m_TexObj = tex_obj;
         }
     }
+    if (mtl_material.bump_texname.size() > 0)
+    {
+        std::filesystem::path texture_path(res_path);
+        texture_path.append(mtl_material.bump_texname);
+        if (std::filesystem::directory_entry(texture_path).exists())
+        {
+            auto tex_obj = LoadTextureFromFile(texture_path.string(), true);
+            material.type = static_cast<MaterialType>(material.type | MaterialType::Normal_Texture);
+            material.data.textures.normal_tex.m_TexObj = tex_obj;
+        }
+    }
     if (mtl_material.roughness_texname.size() > 0)
     {
         std::filesystem::path texture_path(res_path);

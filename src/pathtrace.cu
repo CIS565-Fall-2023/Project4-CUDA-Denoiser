@@ -44,6 +44,9 @@ CPU_ONLY CudaPathTracer::~CudaPathTracer()
 	SafeCudaFree(dev_paths);
 	SafeCudaFree(dev_end_paths);
 	SafeCudaFree(dev_intersections);
+	SafeCudaFree(dev_gbuffer);
+	SafeCudaFree(dev_denoised_img_r);
+	SafeCudaFree(dev_denoised_img_w);
 
 	if (cuda_pbo_dest_resource)
 	{
@@ -79,15 +82,29 @@ CPU_GPU void writePixel(glm::vec3& hdr_pixel, uchar4& pixel)
 }
 
 //Kernel that writes the image to the OpenGL PBO directly.
-__global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution, glm::vec3* image) 
+__global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution, glm::vec3* image, GInfo* gbuffer, DisplayMode mode) 
 {
 	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
 	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
 
 	if (x >= resolution.x || y >= resolution.y) return;
-
 	int index = (x + (y * resolution.x));
-	glm::vec3 pix = image[index];
+	glm::vec3 pix;
+	switch (mode)
+	{
+	case DisplayMode::Color:
+	{
+		pix = image[index];
+		break;
+	}
+	case DisplayMode::Normal:
+	{
+		pix = gbuffer[index].normal * 0.5f + 0.5f;
+		break;
+	}
+	default:
+		pix = glm::vec3(0.f);
+	}
 
 	writePixel(pix, pbo[index]);
 }
@@ -156,7 +173,11 @@ __global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, Path
 
 		CudaRNG rng(iter, index, 0);
 
-		segment.ray = CastRay(cam, { x + rng.rand(), y + rng.rand() }, { rng.rand(), rng.rand() });
+		glm::vec2 coord = { x, y };
+		
+		//coord += glm::vec2(rng.rand(), rng.rand());
+
+		segment.ray = CastRay(cam, coord, { rng.rand(), rng.rand() });
 		segment.pixelIndex = index;
 		segment.remainingBounces = traceDepth;
 
@@ -168,7 +189,10 @@ __global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, Path
 // computeIntersections handles generating ray intersections ONLY.
 // Generating new rays is handled in your shader(s).
 // Feel free to modify the code below.
-__global__ void computeIntersections(int num_paths, PathSegment* pathSegments, ShadeableIntersection* intersections, GPUScene scene)
+__global__ void computeIntersections(int num_paths, 
+									PathSegment* pathSegments, 
+									ShadeableIntersection* intersections, 
+									GPUScene scene)
 {
 	int index = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -221,11 +245,13 @@ __global__ void finalGather(float u, int nPaths, glm::vec3* image, PathSegment* 
 __global__ void KernelNaiveGI(const int iteration, const int num_paths, const int num_materials,
 							ShadeableIntersection* shadeableIntersections,
 							PathSegment* pathSegments,
+							GInfo* gbuffer,
 							const Material* materials, EnvironmentMap env_map, 
-							const UniformMaterialData u_data)
+							const UniformMaterialData u_data, bool cache_gbuffer)
 {
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 	if (idx >= num_paths) return;
+	
 	__shared__ Material shared_materials[128];
 	if (blockDim.x >= num_materials)
 	{
@@ -297,6 +323,15 @@ __global__ void KernelNaiveGI(const int iteration, const int num_paths, const in
 		else
 		{	
 			material.GetNormal(intersection.uv, intersection.normal);
+			
+			if (cache_gbuffer)
+			{
+				GInfo info;
+				info.normal = intersection.normal;
+				info.position = intersection.position;
+				gbuffer[idx] = info;
+			}
+
 			CudaRNG rng(iteration, idx, segment.remainingBounces);
 			BSDFSample bsdf_sample;
 			bsdf_sample.wiW = -segment.ray.direction;
@@ -304,7 +339,7 @@ __global__ void KernelNaiveGI(const int iteration, const int num_paths, const in
 			{
 				// generate new ray
 				pathSegments[idx].ray = Ray::SpawnRay(intersection.position, bsdf_sample.wiW);
-				pathSegments[idx].throughput *= bsdf_sample.f * glm::abs(glm::dot(bsdf_sample.wiW, intersection.normal)) / bsdf_sample.pdf;
+				pathSegments[idx].throughput *= glm::clamp(bsdf_sample.f * glm::abs(glm::dot(bsdf_sample.wiW, intersection.normal)) / bsdf_sample.pdf, glm::vec3(0.1f), glm::vec3(1.f));
 				--pathSegments[idx].remainingBounces;
 
 				if (MaterialType::SubsurfaceScattering == material.type)
@@ -351,12 +386,76 @@ __global__ void KernelDisplayNormal(const int iteration, const int num_paths, co
 	return;
 }
 
+__global__ void KernelDenoise(const glm::ivec2 resolution, const GInfo* gbuffer, 
+								const glm::vec3* denoised_img_r, glm::vec3* denoised_img_w, 
+								const float color_phi, const float normal_phi, const float position_phi, 
+								const int step_size)
+{
+	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+
+	if (x >= resolution.x || y >= resolution.y) return;
+	int index = (x + (y * resolution.x));
+
+	glm::vec3 color = denoised_img_r[index];
+	glm::vec3 normal = gbuffer[index].normal;
+	glm::vec3 position = gbuffer[index].position;
+
+	float cum_weight = 0.f;
+	glm::vec3 sum = glm::vec3(0.f);
+	
+	const float kernel[25] {
+		0.0030, 0.0133, 0.0219, 0.0133, 0.0030,
+		0.0133, 0.0596, 0.0983, 0.0596, 0.0133,
+		0.0219, 0.0983, 0.1621, 0.0983, 0.0219,
+		0.0133, 0.0596, 0.0983, 0.0596, 0.0133,
+		0.0030, 0.0133, 0.0219, 0.0133, 0.0030
+	};
+
+	for (int x = -2; x <= 2; ++x)
+	{
+		for (int y = -2; y <= 2; ++y)
+		{
+			const int id = index + (x + y * (resolution.x)) * step_size;
+			if (id >= 0 && id < resolution.x * resolution.y)
+			{
+				const glm::vec3 color_temp = denoised_img_r[id];
+
+				glm::vec3 t = color - color_temp;
+				float dist2 = glm::dot(t, t);
+
+				float color_weight = glm::min(glm::exp(-dist2 / color_phi), 1.f);
+
+				GInfo info = gbuffer[id];
+				glm::vec3 normal_temp = info.normal;
+				t = normal - normal_temp;
+				dist2 = glm::min(glm::dot(t, t) / (step_size * step_size), 0.f);
+				float normal_weight = glm::min(glm::exp(-dist2 / normal_phi), 1.f);
+
+				glm::vec3 position_temp = info.position;
+				t = position - position_temp;
+				dist2 = glm::min(glm::dot(t, t) / (step_size * step_size), 0.f);
+				float position_weight = glm::min(glm::exp(-dist2 / position_phi), 1.f);
+
+				float weight = color_weight * normal_weight * position_weight;
+				sum += color_temp * weight * kernel[(x + 2) + (y + 2) * 5];
+				cum_weight += weight * kernel[(x + 2) + (y + 2) * 5];
+			}
+		}
+	}
+	cum_weight = cum_weight > Epsilon ? cum_weight : 1.f;
+	denoised_img_w[index] = sum / cum_weight;
+}
+
 CPU_ONLY void CudaPathTracer::Resize(const int& w, const int& h)
 {
 	resolution.x = w;
 	resolution.y = h;
 
 	SafeCudaFree(dev_hdr_img);  // no-op if dev_image is null
+	SafeCudaFree(dev_denoised_img_r);
+	SafeCudaFree(dev_denoised_img_w);
+	SafeCudaFree(dev_gbuffer);
 	SafeCudaFree(dev_paths);
 	SafeCudaFree(dev_end_paths);
 	SafeCudaFree(dev_intersections);
@@ -372,8 +471,13 @@ CPU_ONLY void CudaPathTracer::Resize(const int& w, const int& h)
 	cudaMalloc(&dev_hdr_img, pixelcount * sizeof(glm::vec3));
 	cudaMemset(dev_hdr_img, 0, pixelcount * sizeof(glm::vec3));
 
+	cudaMalloc(&dev_denoised_img_r, pixelcount * sizeof(glm::vec3));
+	cudaMalloc(&dev_denoised_img_w, pixelcount * sizeof(glm::vec3));
+
 	cudaMalloc(&dev_paths, pixelcount * sizeof(PathSegment));
 	cudaMalloc(&dev_end_paths, pixelcount * sizeof(PathSegment));
+
+	cudaMalloc(&dev_gbuffer, pixelcount * sizeof(GInfo));
 
 	cudaMalloc(&dev_intersections, pixelcount * sizeof(ShadeableIntersection));
 	cudaMemset(dev_intersections, 0, pixelcount * sizeof(ShadeableIntersection));
@@ -384,7 +488,7 @@ CPU_ONLY void CudaPathTracer::Resize(const int& w, const int& h)
 
 void CudaPathTracer::Init(Scene* scene)
 {
-	m_Iteration = 0;
+	m_Iteration = 1;
 
 	const Camera& cam = scene->state.camera;
 	const int pixelcount = cam.resolution.x * cam.resolution.y;
@@ -394,8 +498,13 @@ void CudaPathTracer::Init(Scene* scene)
 	cudaMalloc(&dev_hdr_img, pixelcount * sizeof(glm::vec3));
 	cudaMemset(dev_hdr_img, 0, pixelcount * sizeof(glm::vec3));
 
+	cudaMalloc(&dev_denoised_img_r, pixelcount * sizeof(glm::vec3));
+	cudaMalloc(&dev_denoised_img_w, pixelcount * sizeof(glm::vec3));
+
 	cudaMalloc(&dev_paths, pixelcount * sizeof(PathSegment));
 	cudaMalloc(&dev_end_paths, pixelcount * sizeof(PathSegment));
+
+	cudaMalloc(&dev_gbuffer, pixelcount * sizeof(GInfo));
 
 	cudaMalloc(&dev_intersections, pixelcount * sizeof(ShadeableIntersection));
 	cudaMemset(dev_intersections, 0, pixelcount * sizeof(ShadeableIntersection));
@@ -425,6 +534,7 @@ CPU_ONLY void CudaPathTracer::Render(GPUScene& scene,
 									 const Camera& camera,
 									 const UniformMaterialData& data)
 {
+	if (m_Iteration > m_MaxIteration) return;
 	const int pixelcount = resolution.x * resolution.y;
 
 	const int& max_depth = camera.path_depth;
@@ -467,7 +577,10 @@ CPU_ONLY void CudaPathTracer::Render(GPUScene& scene,
 																				dev_intersections, dev_paths, scene.dev_materials);
 #else
 		KernelNaiveGI<<<numblocksPathSegmentTracing, blockSize1d >>>(m_Iteration, num_paths, scene.material_count,
-																	 dev_intersections, dev_paths, scene.dev_materials, scene.env_map, data);
+																	 dev_intersections, dev_paths, 
+																	 dev_gbuffer,
+																	 scene.dev_materials, scene.env_map,								 
+																	 data, depth == 1);
 		checkCUDAError("NaiveGI Error");
 #endif
 		cudaDeviceSynchronize();
@@ -482,7 +595,7 @@ CPU_ONLY void CudaPathTracer::Render(GPUScene& scene,
 	}
 
 	// Assemble this iteration and apply it to the image
-	float u = 1.f / static_cast<float>(m_Iteration + 1); // used for interpolation between last frame and this frame
+	float u = 1.f / static_cast<float>(m_Iteration); // used for interpolation between last frame and this frame
 	if (pixelcount >= Compact_Threshold)
 	{
 		int num_end_paths = thrust_end_paths_end - thrust_dev_end_paths_bgein;
@@ -497,11 +610,37 @@ CPU_ONLY void CudaPathTracer::Render(GPUScene& scene,
 		finalGather << <numBlocksPixels, blockSize1d >> > (u, num_paths, dev_hdr_img, dev_paths);
 	}
 	checkCUDAError("Final Gather failed");
-	cudaDeviceSynchronize();
-	///////////////////////////////////////////////////////////////////////////
 
-	// Send results to OpenGL buffer for rendering
-	sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (dev_img, camera.resolution, dev_hdr_img);
+	if (m_DenoiseConfig.denoise)
+	{
+		cudaMemcpy(dev_denoised_img_r, dev_hdr_img, pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToDevice);
+
+		// denoise pass
+		int step = 1;
+		int it = 1;
+		while (step < 8)
+		{
+			float scaler = pow(2, -it);
+			KernelDenoise << <blocksPerGrid2d, blockSize2d >> > (resolution, dev_gbuffer, 
+																 dev_denoised_img_r, dev_denoised_img_w, 
+																 m_DenoiseConfig.colorWeight * scaler,
+																 m_DenoiseConfig.normalWeight * scaler,
+																 m_DenoiseConfig.positionWeight * scaler,
+																 step);
+
+			std::swap(dev_denoised_img_r, dev_denoised_img_w);
+			step <<= 1;
+			++it;
+		}
+		sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (dev_img, resolution, dev_denoised_img_r, dev_gbuffer, m_DisplayMode);
+	}
+	else
+	{
+		// Send results to OpenGL buffer for rendering
+		sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (dev_img, resolution, dev_hdr_img, dev_gbuffer, m_DisplayMode);
+	}
+	//cudaDeviceSynchronize();
+	///////////////////////////////////////////////////////////////////////////
 
 	checkCUDAError("pathtrace");
 	++m_Iteration;

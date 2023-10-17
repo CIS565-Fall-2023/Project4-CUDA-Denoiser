@@ -339,3 +339,16 @@ struct UniformMaterialData
     float metallic = 1.f;
     float eta = 1.5f;
 };
+
+enum DisplayMode : unsigned char
+{
+    Color = 0,
+    Normal,
+    Position
+};
+
+struct GInfo
+{
+    glm::vec3 position;
+    glm::vec3 normal;
+};

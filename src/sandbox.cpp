@@ -150,6 +150,44 @@ void SandBox::DrawImGui()
 		ImGui::End();
 	}
 	{
+		// Denoiser GUI
+		ImGui::Begin("Denoiser Control");
+		bool changed = false;
+		static std::string cur_display_mode = "Color";
+		const static std::vector<std::string> display_modes{
+			"Color",
+			"Normal"
+		};
+		const static std::vector<DisplayMode> modes{
+			DisplayMode::Color,
+			DisplayMode::Normal
+		};
+		if (ImGui::BeginCombo("##combo", cur_display_mode.c_str()))
+		{
+			for (int i = 0; i < display_modes.size(); ++i)
+			{
+				bool is_selected = (cur_display_mode == display_modes[i]);
+				if (ImGui::Selectable(display_modes[i].c_str(), is_selected))
+				{
+					cur_display_mode = display_modes[i];
+					m_PathTracer->m_DisplayMode = modes[i];
+				}
+			}
+			ImGui::EndCombo();
+		}
+
+		changed |= ImGui::DragInt("Iterations", &m_PathTracer->m_MaxIteration, 1, 1, 5000);
+		DenoiseConfig& config = m_PathTracer->m_DenoiseConfig;
+		changed |= ImGui::Checkbox("Denoise", &config.denoise);
+		changed |= ImGui::DragInt("Filter Size", &config.filterSize, 1, 0, 100);
+		changed |= ImGui::DragFloat("Color Weight", &config.colorWeight, 0.05f, 0.f, 10.f);
+		changed |= ImGui::DragFloat("Normal Weight", &config.normalWeight, 0.05f, 0.f, 10.f);
+		changed |= ImGui::DragFloat("Position Weight", &config.positionWeight, 0.1f, 0.f, 10.f);
+		if (changed) m_PathTracer->Reset();
+		ImGui::End();
+	}
+	/*
+	{
 		bool changed = false;
 		ImGui::Begin("Default Material Param");
 		
@@ -202,6 +240,7 @@ void SandBox::DrawImGui()
 		if (changed) m_PathTracer->Reset();
 		ImGui::End();
 	}
+	*/
 }
 
 void SandBox::Run()

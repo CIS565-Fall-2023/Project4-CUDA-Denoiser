@@ -8,12 +8,12 @@
 
 int main(int argc, char** argv) 
 {
-	if (argc < 2)
-	{
-		printf("Please specify a .json scene file to open\n");
-		return 1;
-	}
-	uPtr<SandBox> sandbox = mkU<SandBox>(argv[1]);
+	//if (argc < 2)
+	//{
+	//	printf("Please specify a .json scene file to open\n");
+	//	return 1;
+	//}
+	uPtr<SandBox> sandbox = mkU<SandBox>("scenes/cornellBox.json");
 	Application app(sandbox->GetCameraResolution());
 	app.SetSandBox(sandbox.get());
 
