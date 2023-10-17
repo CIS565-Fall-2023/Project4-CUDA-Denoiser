@@ -23,7 +23,6 @@
 
 #define ERRORCHECK 1
 #define DEBUG 0
-#define DENOISE 1
 
 #define FILENAME (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 #define checkCUDAError(msg) checkCUDAErrorFn(msg, FILENAME, __LINE__)
@@ -179,14 +178,12 @@ void PathTracer::pathtraceInit(Scene* scene)
 	cudaMemcpy(this->dev_bvh.get(), bvh.data(), bvh.size() * sizeof(BVHNode), cudaMemcpyHostToDevice);
 	this->dev_donePaths.malloc(pixelcount, "Malloc dev_donePath error");
 
-#if DENOISE
 	dev_gbuffer.malloc(pixelcount, "Malloc dev_gbuffer error");
 	cudaMemset(dev_gbuffer.get(), 0, pixelcount * sizeof(GBuffer));
 	dev_gImg0.malloc(pixelcount, "Malloc dev_gImg error");
 	cudaMemset(dev_gImg0.get(), 0, pixelcount * sizeof(glm::vec3));
 	dev_gImg1.malloc(pixelcount, "Malloc dev_gImg error");
 	cudaMemset(dev_gImg1.get(), 0, pixelcount * sizeof(glm::vec3));
-#endif
 
 	checkCUDAError("pathtraceInit");
 }
@@ -367,11 +364,10 @@ __global__ void processPBR(
 }
 
 
-#if DENOISE
-
 //store value that can be get in first frame
 __global__ void processGBuffer(
-	int num_paths
+	float iter
+	, int num_paths
 	, PathSegment* in_segments 
 	, ShadeableIntersection* in_intersects
 	, Material* in_materials
@@ -392,20 +388,8 @@ __global__ void processGBuffer(
 		normal = tangentToWorld(normal) * texture2D(intersect.surfaceUV, in_textures[material.bumpId]);
 	}
 	GBuffer& gbuffer = out_gbuffer[seg.pixelIndex];
-	gbuffer.norm = normal;
-	gbuffer.pos = intersect.t * seg.ray.direction + seg.ray.origin;
-}
-
-//store color value to the gbuffer
-__global__ void gatherGBufferColor(
-	int num_paths
-	, PathSegment* in_segments
-	, glm::vec3* out_color
-) {
-	int path_idx = blockIdx.x * blockDim.x + threadIdx.x;
-	if (path_idx >= num_paths)return; // no light
-	PathSegment& seg = in_segments[path_idx];
-	out_color[seg.pixelIndex] = seg.color;
+	gbuffer.norm = glm::mix(gbuffer.norm,normal,1.f/iter);
+	gbuffer.pos = glm::mix(gbuffer.pos ,intersect.t * seg.ray.direction + seg.ray.origin, 1.f/iter);
 }
 
 //make denosiser
@@ -481,20 +465,19 @@ __global__ void denoise(
 	out_c[idx] = sum / weightSum;
 }
 
-__global__ void finalGather(
-	int resX
-	, int resY
-	, float iter
-	, glm::vec3* in_img
-	, glm::vec3* out_img
-){
-	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
-	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
-	if (!inScreen(x, y, resX, resY))return;
-	int idx = to1D(x, y, resX, resY);
-	out_img[idx] = glm::mix(out_img[idx], in_img[idx], 1.f / iter);
-}
-#endif // DENOISE
+//__global__ void finalGather(
+//	int resX
+//	, int resY
+//	, float iter
+//	, glm::vec3* in_img
+//	, glm::vec3* out_img
+//){
+//	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+//	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+//	if (!inScreen(x, y, resX, resY))return;
+//	int idx = to1D(x, y, resX, resY);
+//	out_img[idx] = glm::mix(out_img[idx], in_img[idx], 1.f / iter);
+//}
 
 
 
@@ -564,20 +547,21 @@ void PathTracer::pathtrace(uchar4* pbo, int frame, int iter)
 			);
 		checkCUDAError("trace one bounce");
 		cudaDeviceSynchronize();
-#if DENOISE
-		if (depth == 0) {
-			processGBuffer << <numblocksPathSegmentTracing, blockSize1d >> > (
-				pixelcount
-				, dev_paths
-				, dev_intersections
-				, dev_materials
-				, dev_texObjs
-				, dev_gbuffer.get()
-			);
-			checkCUDAError("trace gbuffer");
-			cudaDeviceSynchronize();
+		if (m_guiData->ui_denoise) {
+			if (depth == 0) {
+				processGBuffer << <numblocksPathSegmentTracing, blockSize1d >> > (
+					iter
+					, pixelcount
+					, dev_paths
+					, dev_intersections
+					, dev_materials
+					, dev_texObjs
+					, dev_gbuffer.get()
+					);
+				checkCUDAError("trace gbuffer");
+				cudaDeviceSynchronize();
+			}
 		}
-#endif //DENOISE
 		processPBR << <numblocksPathSegmentTracing, blockSize1d >> > (
 			iter, depth
 			, num_paths
@@ -605,30 +589,39 @@ void PathTracer::pathtrace(uchar4* pbo, int frame, int iter)
 	// Assemble this iteration and apply it to the image
 	// * Finally, add this iteration's results to the image. This has been done
 	//   for you.
+
 	dim3 numBlocksPixels = (pixelcount + blockSize1d - 1) / blockSize1d;
-#if DENOISE
-	glm::vec3* o_dColor = dev_gImg0.get();
-	glm::vec3* i_dColor = dev_gImg1.get();
-	GBuffer* i_gbuffer = dev_gbuffer.get();
-	gatherGBufferColor << <numBlocksPixels, blockSize1d >> > (pixelcount, dev_donePaths, o_dColor);
-	for (int i = 0;i < 3;++i) {
-		int offset = 1 << i;
-		swap(o_dColor, i_dColor);
-		denoise << <blocksPerGrid2d, blockSize2d >> > (cam.resolution.x, cam.resolution.y, i_gbuffer, offset,m_guiData->ui_colorWeight ,m_guiData->ui_normalWeight, m_guiData->ui_positionWeight, i_dColor, o_dColor);
-	}
-	finalGather << <blocksPerGrid2d, blockSize2d >> > (cam.resolution.x, cam.resolution.y, iter, o_dColor, dev_image);
-#else
-	finalGather << <numBlocksPixels, blockSize1d >> > (pixelcount, iter, dev_image, dev_donePaths);
-#endif
 	
+	finalGather << <numBlocksPixels, blockSize1d >> > (pixelcount, iter, dev_image, dev_donePaths);
+	if (m_guiData->ui_denoise) {
+		glm::vec3* o_dColor = dev_gImg0.get();
+		glm::vec3* i_dColor = dev_gImg1.get();
+		GBuffer* i_gbuffer = dev_gbuffer.get();
+		//gatherGBufferColor << <numBlocksPixels, blockSize1d >> > (pixelcount, dev_donePaths, o_dColor);
+		cudaMemcpy(o_dColor, dev_image, pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToDevice);
+		for (int i = 0;i < 3;++i) {
+			int offset = 1 << i;
+			swap(o_dColor, i_dColor);
+			denoise << <blocksPerGrid2d, blockSize2d >> > (cam.resolution.x, cam.resolution.y, i_gbuffer, offset, m_guiData->ui_colorWeight, m_guiData->ui_normalWeight, m_guiData->ui_positionWeight, i_dColor, o_dColor);
+		}
+		// Send results to OpenGL buffer for rendering
+		sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, o_dColor, iter);
+
+		// Retrieve image from GPU
+		cudaMemcpy(hst_scene->state.image.data(), o_dColor,
+			pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
+	}
+	else {
+		// Send results to OpenGL buffer for rendering
+		sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, dev_image, iter);
+
+		// Retrieve image from GPU
+		cudaMemcpy(hst_scene->state.image.data(), dev_image,
+			pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
+	}
 	///////////////////////////////////////////////////////////////////////////
 
-	// Send results to OpenGL buffer for rendering
-	sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, dev_image, iter);
 
-	// Retrieve image from GPU
-	cudaMemcpy(hst_scene->state.image.data(), dev_image,
-		pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
 
 	checkCUDAError("pathtrace");
 }

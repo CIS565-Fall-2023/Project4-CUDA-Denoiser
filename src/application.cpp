@@ -332,16 +332,12 @@ void Application::renderImGui()
 
 	if (ImGui::SliderInt("Iterations", &m_guiData->ui_iterations, 1, 1000))m_iteration = 0;
 	
-	ImGui::Checkbox("Denoise", &m_guiData->ui_denoise);
+	if (ImGui::Checkbox("Denoise", &m_guiData->ui_denoise))m_iteration = 0;
 
 	if (ImGui::SliderInt("Filter Size", &m_guiData->ui_filterSize, 0, 100))m_iteration = 0;
 	if(ImGui::SliderFloat("Color Weight", &m_guiData->ui_colorWeight, 0.0f, 10.0f))m_iteration = 0;
 	if(ImGui::SliderFloat("Normal Weight", &m_guiData->ui_normalWeight, 0.0f, 10.0f))m_iteration = 0;
 	if (ImGui::SliderFloat("Position Weight", &m_guiData->ui_positionWeight, 0.0f, 10.0f))m_iteration = 0;
-
-	ImGui::Separator();
-
-	ImGui::Checkbox("Show GBuffer", &m_guiData->ui_showGbuffer);
 
 	ImGui::Separator();
 
@@ -370,7 +366,8 @@ std::string Application::currentTimeString()
 glm::vec3 Application::getPixelColor(int x, int y)
 {
 	int idx = x + (y * m_width);
-	glm::vec3 pix = m_scene->state.image[idx];
+	//glm::vec3 pix = m_scene->state.image[idx];
+	glm::vec3 pix = glm::pow(m_scene->state.image[idx] / (m_scene->state.image[idx] + 1.f), glm::vec3(1.f / 2.2));
 	return pix;
 }
 
