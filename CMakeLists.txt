@@ -73,18 +73,6 @@ set(headers
     src/sceneStructs.h
     src/preview.h
     src/utilities.h
-    src/ImGui/imconfig.h
-	
-	src/ImGui/imgui.h
-    src/ImGui/imconfig.h
-    src/ImGui/imgui_impl_glfw.h
-     src/ImGui/imgui_impl_opengl3.h 
-     src/ImGui/imgui_impl_opengl3_loader.h 
-     src/ImGui/imgui_internal.h 
-     src/ImGui/imstb_rectpack.h 
-     src/ImGui/imstb_textedit.h 
-     src/ImGui/imstb_truetype.h
-
     external/include/tiny_gltf.h
     )
 
@@ -97,14 +85,6 @@ set(sources
     src/scene.cpp
     src/preview.cpp
     src/utilities.cpp
-	
-    src/ImGui/imgui.cpp 
-      src/ImGui/imgui_demo.cpp 
-      src/ImGui/imgui_draw.cpp 
-     src/ImGui/imgui_impl_glfw.cpp 
-     src/ImGui/imgui_impl_opengl3.cpp 
-     src/ImGui/imgui_tables.cpp 
-     src/ImGui/imgui_widgets.cpp 
     )
 
 set(imgui
@@ -131,7 +111,6 @@ source_group(Headers FILES ${headers})
 source_group(Sources FILES ${sources})
 source_group(imgui FILES ${imgui})
 
-#add_subdirectory(src/ImGui)
 #add_subdirectory(stream_compaction)  # TODO: uncomment if using your stream compaction
 
 cuda_add_executable(${CMAKE_PROJECT_NAME} ${sources} ${headers} ${imgui})
