@@ -1,7 +1,7 @@
-CUDA Path Tracer
-================
+CUDA Denoiser For CUDA Path Tracer
+==================================
 
-**University of Pennsylvania, CIS 565: GPU Programming and Architecture, Project 3**
+**University of Pennsylvania, CIS 565: GPU Programming and Architecture, Project 4**
 
 * Zhenzhong Tang
   * [LinkedIn](https://www.linkedin.com/in/zhenzhong-anthony-tang-82334a210), [Instagram](https://instagram.com/toytag12), [personal website](https://toytag.net/)
