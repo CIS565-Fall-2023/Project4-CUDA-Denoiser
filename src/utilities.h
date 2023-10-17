@@ -22,6 +22,15 @@ public:
     int TracedDepth;
     float lensRadius = 0.00f;
     float focusLength = 1.f;
+
+    int ui_iterations = 100;
+    bool ui_denoise = false;
+    int ui_filterSize = 0;
+    float ui_colorWeight = 0.f;
+    float ui_normalWeight = 0.f;
+    float ui_positionWeight = 0.f;
+    bool ui_showGbuffer = false;
+    bool ui_save = false;
 };
 
 namespace utilityCore {

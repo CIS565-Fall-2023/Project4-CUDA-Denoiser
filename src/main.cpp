@@ -25,7 +25,7 @@ int main(int argc, char** argv) {
 	//}
 
 	string sceneFilePath = SCENE_PATH;
-	sceneFilePath += "brick.txt";
+	sceneFilePath += "test.txt";
 
 	auto& app = Application::getInstance();
 

@@ -319,29 +319,36 @@ void Application::renderImGui()
 	static int counter = 0;
 
 	ImGui::Begin("Path Tracer Analytics");                  // Create a window called "Hello, world!" and append into it.
-
-	// LOOK: Un-Comment to check the output window and usage
-	//ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
 	ImGui::Checkbox("Demo Window", &show_demo_window);      // Edit bools storing our window open/close state
+	
+	ImVec2 minSize(300.f, 220.f);
+	ImVec2 maxSize((float)800 * 0.5, (float)600 * 0.3);
+	ImGui::SetNextWindowSizeConstraints(minSize, maxSize);
 	//ImGui::Checkbox("Another Window", &show_another_window);
+	if (ImGui::SliderFloat("lens radius", &m_guiData->lensRadius, 0.0f, 5.f))m_iteration = 0;
+	if (ImGui::SliderFloat("focus length", &m_guiData->focusLength, 0.0, 50.f))m_iteration = 0;
+	
+	ImGui::Separator();
 
-	ImGui::SliderFloat("float", &f, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
-	//ImGui::ColorEdit3("clear color", (float*)&clear_color); // Edit 3 floats representing a color
+	if (ImGui::SliderInt("Iterations", &m_guiData->ui_iterations, 1, 1000))m_iteration = 0;
+	
+	ImGui::Checkbox("Denoise", &m_guiData->ui_denoise);
 
-	//if (ImGui::Button("Button"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
-	//	counter++;
-	//ImGui::SameLine();
-	//ImGui::Text("counter = %d", counter);
-	//ImGui::Text("Traced Depth %d", m_guiData->TracedDepth);
-	float lastRadius = m_guiData->lensRadius;
-	float lastLength = m_guiData->focusLength;
+	if (ImGui::SliderInt("Filter Size", &m_guiData->ui_filterSize, 0, 100))m_iteration = 0;
+	if(ImGui::SliderFloat("Color Weight", &m_guiData->ui_colorWeight, 0.0f, 10.0f))m_iteration = 0;
+	if(ImGui::SliderFloat("Normal Weight", &m_guiData->ui_normalWeight, 0.0f, 10.0f))m_iteration = 0;
+	if (ImGui::SliderFloat("Position Weight", &m_guiData->ui_positionWeight, 0.0f, 10.0f))m_iteration = 0;
 
-	ImGui::SliderFloat("lens radius", &m_guiData->lensRadius, 0.0f, 5.f);
-	ImGui::SliderFloat("focus length", &m_guiData->focusLength, 0.0, 50.f);
+	ImGui::Separator();
 
-	if (lastRadius != m_guiData->lensRadius || lastLength!=m_guiData->focusLength) {
-		updateCameraView();
+	ImGui::Checkbox("Show GBuffer", &m_guiData->ui_showGbuffer);
+
+	ImGui::Separator();
+
+	if (ImGui::Button("Save image")) {
+		m_guiData->ui_save = true;
 	}
+
 
 	ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
 	ImGui::End();
@@ -401,7 +408,7 @@ void Application::pathTrace()
 		m_tracer.get()->pathtraceInit(m_scene.get());
 	}
 
-	if (m_iteration < m_scene->state.maxIterations) {
+	if (m_iteration < m_guiData->ui_iterations) {
 		uchar4* pbo_dptr = NULL;
 		m_iteration++;
 		cudaGLMapBufferObject((void**)&pbo_dptr, m_pbo);
@@ -413,10 +420,11 @@ void Application::pathTrace()
 		// unmap buffer object
 		cudaGLUnmapBufferObject(m_pbo);
 	}
-	else {
+	if(m_guiData->ui_save){
 		saveImage(getOutputImageName().c_str());
-		cudaDeviceReset();
-		exit(EXIT_SUCCESS);
+		m_guiData->ui_save = false;
+		//cudaDeviceReset();
+		//exit(EXIT_SUCCESS);
 	}
 }
 

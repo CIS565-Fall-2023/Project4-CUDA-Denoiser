@@ -102,11 +102,11 @@ SCALE       10 10 1
 
 // Short cube
 MESH 5
-cow.obj
+bunny.obj
 material 1
 TRANS       0 1 0.75
-ROTAT       0 30 0
-SCALE       0.6 0.6 0.6
+ROTAT       0 200 0
+SCALE       12 12 12
 
 // Ceiling light
 MESH 6

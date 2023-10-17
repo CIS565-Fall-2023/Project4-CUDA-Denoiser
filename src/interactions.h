@@ -179,6 +179,35 @@ __device__ float schlick(const glm::vec3& I, const glm::vec3& N, float eta) {
 	return f0 + (1.0 - f0) * x5;
 }
 
+__device__ float PBfresnel(const glm::vec3& I, const glm::vec3& N, float eta)
+{
+	float cos_i = -glm::dot(I, N);
+	float cos2_t = 1.0 - eta * eta * (1.0 - cos_i * cos_i);
+	if (cos2_t < 0.0)
+		return 1.0;
+	float cos_t = std::sqrt(cos2_t);
+
+	float r1 = (eta * cos_i - cos_t) / (eta * cos_i + cos_t);
+	float r2 = (cos_i - eta * cos_t) / (cos_i + eta * cos_t);
+	return (r1 * r1 + r2 * r2) * 0.5;
+}
+
+
+__device__ glm::vec3 Refract(const glm::vec3& I, const glm::vec3& N, float eta)
+{
+	float cos_theta = dot(I, N);  // float cos_theta_i = -dot(I, N);
+	float sin2_theta_i = 1.0 - cos_theta * cos_theta;
+	float sin2_theta_t = eta * eta * sin2_theta_i;
+	float cos2_theta_t = 1.0 - sin2_theta_t;
+	if (cos2_theta_t >= 0.0)
+	{
+		float cos_theta_t = std::sqrt(cos2_theta_t);
+		return eta * I - (eta * cos_theta + cos_theta_t) * N;
+	}
+	else
+		return glm::vec3(0.0);
+}
+
 __device__ bool sampleRay(
 	glm::vec3 wo
 	, glm::vec3 norm
@@ -197,8 +226,8 @@ __device__ bool sampleRay(
 			eta = 1.0 / eta;
 		}
 		thrust::uniform_real_distribution<float> u01(0.f, 1.f);
-		float fresnel = schlick(-wo, normal, eta);
-		glm::vec3 refract = glm::refract(-wo, normal, eta);
+		float fresnel = PBfresnel(-wo, normal, eta);
+		glm::vec3 refract = Refract(-wo, normal, eta);
 		if (
 			!isnan(refract.x) &&
 			fresnel < u01(rng)

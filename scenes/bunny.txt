@@ -65,7 +65,7 @@ FOVY        45
 ITERATIONS  5000
 DEPTH       8
 FILE        cornell
-EYE         0.0 1 -12
+EYE         0.0 5.5 -10
 LOOKAT      0 2.5 0
 UP          0 1 0
 
@@ -110,24 +110,16 @@ TRANS       0 7.5 0
 ROTAT       90 0 0
 SCALE       10 10 1
 
-// Long cube
-MESH 5
-cube.obj
-material 1
-TRANS       2 0 3
-ROTAT       0 27.5 0
-SCALE       3 6 3
-
 // Short cube
-MESH 6
-cube.obj
+MESH 5
+bunny.obj
 material 1
 TRANS       -2 -1 0.75
 ROTAT       0 -17.5 0
 SCALE       3 3 3
 
 // Ceiling light
-MESH 7
+MESH 6
 plane.obj
 material 0
 TRANS       0 7.45 0

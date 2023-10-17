@@ -9,6 +9,9 @@ class PathTracer {
 private:
 	Scene* hst_scene;
 	GuiDataContainer* m_guiData;
+	CudaMemory<GBuffer> dev_gbuffer;//output gbuffer in the current frame
+	CudaMemory<glm::vec3> dev_gImg0;
+	CudaMemory<glm::vec3> dev_gImg1;
 	CudaMemory<glm::vec3> dev_img;
 	CudaMemory<Mesh> dev_geoms;
 	CudaMemory<Triangle> dev_trigs;

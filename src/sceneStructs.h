@@ -86,3 +86,8 @@ struct Mesh {
     glm::mat4 inverseTransform;
     glm::mat4 invTranspose;
 };
+
+struct GBuffer {
+    glm::vec3 norm;
+    glm::vec3 pos;
+};
