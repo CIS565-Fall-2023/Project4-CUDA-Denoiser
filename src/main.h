@@ -20,6 +20,12 @@
 #include "utilities.h"
 #include "scene.h"
 
+//#include "ImGui/imgui.h"
+//#include "ImGui/imgui_impl_glfw.h"
+//#include "ImGui/imgui_impl_opengl3.h"
+#include "../imgui/imgui.h"
+#include "../imgui/imgui_impl_glfw.h"
+#include "../imgui/imgui_impl_opengl3.h"
 using namespace std;
 
 //-------------------------------
@@ -31,6 +37,16 @@ extern int iteration;
 
 extern int width;
 extern int height;
+
+extern int ui_iterations;
+extern int startupIterations;
+extern bool ui_showGbuffer;
+extern bool ui_denoise;
+extern int ui_filterSize;
+extern float ui_colorWeight;
+extern float ui_normalWeight;
+extern float ui_positionWeight;
+extern bool ui_saveAndExit;
 
 void runCuda();
 void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods);

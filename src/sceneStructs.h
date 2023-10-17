@@ -268,3 +268,9 @@ public:
     sortTriIndicesBasedOnDim(const std::vector<Triangle>& tris, int dimToSortOn) : tris(tris), dimToSortOn(dimToSortOn) {}
     bool operator()(int i, int j) const { return tris[i].centroid[dimToSortOn] < tris[j].centroid[dimToSortOn]; }
 };
+
+// CHECKITOUT - a simple struct for storing scene geometry information per-pixel.
+// What information might be helpful for guiding a denoising filter?
+struct GBufferPixel {
+  float t;
+};
