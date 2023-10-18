@@ -17,6 +17,10 @@
 
 #define ERRORCHECK 0
 
+#define DISPLAY_GBUFFER_NORMAL 0
+#define DISPLAY_GBUFFER_POSITION 0
+#define DISPLAY_GBUFFER_DUMMY 1
+
 #define SORT_MATERIALS 0
 #define FIRST_BOUNCE_CACHE 0
 #define ANTI_ALIASING 0
@@ -95,6 +99,38 @@ __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution,
 		pbo[index].x = color.x;
 		pbo[index].y = color.y;
 		pbo[index].z = color.z;
+	}
+}
+
+__global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* gBuffer) {
+	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+
+	if (x < resolution.x && y < resolution.y) {
+		int index = x + (y * resolution.x);
+
+		pbo[index].w = 0;
+#if DISPLAY_GBUFFER_DUMMY
+		float timeToIntersect = gBuffer[index].t * 255.0;
+		pbo[index].x = timeToIntersect;
+		pbo[index].y = timeToIntersect;
+		pbo[index].z = timeToIntersect;
+#elif DISPLAY_GBUFFER_NORMAL
+		// display normal
+		glm::vec3 display_nor = abs(gBuffer[index].normal) * 255.0f;
+
+		pbo[index].x = display_nor.x;
+		pbo[index].y = display_nor.y;
+		pbo[index].z = display_nor.z;
+#elif DISPLAY_GBUFFER_POSITION
+		// display position
+		glm::vec3 display_pos = abs(gBuffer[index].position) * 255.0f / 10.0f;
+
+		// different scale for cornnel box scene
+		pbo[index].x = display_pos.x;
+		pbo[index].y = display_pos.y;
+		pbo[index].z = display_pos.z;
+#endif
 	}
 }
 
@@ -722,7 +758,7 @@ __global__ void finalGather(int nPaths, glm::vec3* image, PathSegment* iteration
  * Wrapper for the __global__ call that sets up the kernel calls and does a ton
  * of memory management
  */
-void pathtrace(uchar4* pbo, int frame, int iter) {
+void pathtrace(int frame, int iter) {
 	const int traceDepth = hst_scene->state.traceDepth;
 	const Camera& cam = hst_scene->state.camera;
 	const int pixelcount = cam.resolution.x * cam.resolution.y;
@@ -945,11 +981,34 @@ void pathtrace(uchar4* pbo, int frame, int iter) {
 	///////////////////////////////////////////////////////////////////////////
 
 	// Send results to OpenGL buffer for rendering
-	sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, iter, dev_image);
+	//sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, iter, dev_image);
 
 	// Retrieve image from GPU
 	cudaMemcpy(hst_scene->state.image.data(), dev_image,
 		pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
 
 	checkCUDAError("pathtrace");
+}
+
+// CHECKITOUT: this kernel "post-processes" the gbuffer/gbuffers into something that you can visualize for debugging.
+void showGBuffer(uchar4* pbo) {
+	const Camera& cam = hst_scene->state.camera;
+	const dim3 blockSize2d(8, 8);
+	const dim3 blocksPerGrid2d(
+		(cam.resolution.x + blockSize2d.x - 1) / blockSize2d.x,
+		(cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
+
+	// CHECKITOUT: process the gbuffer results and send them to OpenGL buffer for visualization
+	gbufferToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, dev_gBuffer);
+}
+
+void showImage(uchar4* pbo, int iter) {
+	const Camera& cam = hst_scene->state.camera;
+	const dim3 blockSize2d(8, 8);
+	const dim3 blocksPerGrid2d(
+		(cam.resolution.x + blockSize2d.x - 1) / blockSize2d.x,
+		(cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
+
+	// Send results to OpenGL buffer for rendering
+	sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, iter, dev_image);
 }
