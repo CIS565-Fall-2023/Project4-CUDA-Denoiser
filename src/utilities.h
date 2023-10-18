@@ -58,5 +58,6 @@ enum class RenderMode
     FULL,
     POSITIONS,
     NORMALS,
+    DEPTH,
     COUNT
 };

@@ -143,18 +143,32 @@ __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution,
 	}
 }
 
-__global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* gBuffer) {
+__global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* gBuffer, RenderMode renderMode) {
     int x = (blockIdx.x * blockDim.x) + threadIdx.x;
     int y = (blockIdx.y * blockDim.y) + threadIdx.y;
 
     if (x < resolution.x && y < resolution.y) {
         int index = x + (y * resolution.x);
-        float timeToIntersect = gBuffer[index].t * 256.0;
 
-        pbo[index].w = 0;
-        pbo[index].x = timeToIntersect;
-        pbo[index].y = timeToIntersect;
-        pbo[index].z = timeToIntersect;
+		glm::vec3 col;
+		switch (renderMode)
+		{
+		case RenderMode::POSITIONS:
+			col = glm::abs(gBuffer[index].pos) * 0.1f * 255.0f;
+			break;
+		case RenderMode::NORMALS:
+			col = (gBuffer[index].nor + 1.0f) * 0.5f * 255.0f;
+			break;
+		case RenderMode::DEPTH:
+			col = glm::max(glm::vec3(0.0f), 1.0f - glm::vec3(gBuffer[index].t) * 0.05f) * 255.0f;
+		default:
+			// wups something bad happened o no wahoooo
+			break;
+		}		
+
+		pbo[index].x = col.x;
+		pbo[index].y = col.y;
+		pbo[index].z = col.z;
     }
 }
 
@@ -475,13 +489,17 @@ __global__ void shadeFakeMaterial(
 
 __global__ void generateGBuffer (
   int num_paths,
-  Intersection* shadeableIntersections,
+  Intersection* intersections,
 	PathSegment* pathSegments,
   GBufferPixel* gBuffer) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
   if (idx < num_paths)
   {
-    gBuffer[idx].t = shadeableIntersections[idx].t;
+	PathSegment& pathSegment = pathSegments[idx];
+	Intersection& isect = intersections[idx];
+	gBuffer[idx].pos = getPointOnRay(pathSegment.ray, isect.t);
+	gBuffer[idx].nor = isect.surfaceNormal;
+	gBuffer[idx].t = isect.t;
   }
 }
 
@@ -683,7 +701,7 @@ void showGBuffer(uchar4* pbo, RenderMode renderMode) {
             (cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
 
     // CHECKITOUT: process the gbuffer results and send them to OpenGL buffer for visualization
-    gbufferToPBO<<<blocksPerGrid2d, blockSize2d>>>(pbo, cam.resolution, dev_gBuffer);
+    gbufferToPBO<<<blocksPerGrid2d, blockSize2d>>>(pbo, cam.resolution, dev_gBuffer, renderMode);
 }
 
 void showImage(uchar4* pbo, int iter) {

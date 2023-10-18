@@ -222,7 +222,7 @@ void drawGui(int windowWidth, int windowHeight) {
     ImGui::Separator();
 
     const int count = static_cast<int>(RenderMode::COUNT);
-    const char* labels[count] = { "Full", "Positions", "Normals" };
+    const char* labels[count] = { "Full", "Positions", "Normals", "Depth"};
     ImGui::Combo("Render Mode", reinterpret_cast<int*>(&ui_renderMode), labels, count);
 
     ImGui::Separator();
