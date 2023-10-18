@@ -22,6 +22,7 @@ static double lastY;
 int ui_iterations = 0;
 int startupIterations = 0;
 int lastLoopIterations = 0;
+bool lastDenoise = false;
 RenderMode ui_renderMode = RenderMode::FULL;
 bool ui_denoise = false;
 int ui_filterSize = 80;
@@ -135,6 +136,12 @@ void runCuda() {
       camchanged = true;
     }
 
+	if (lastDenoise != ui_denoise)
+	{
+		camchanged = !ui_denoise;
+		lastDenoise = ui_denoise;
+	}
+
     if (camchanged) {
         iteration = 0;
         Camera &cam = renderState->camera;
@@ -171,7 +178,7 @@ void runCuda() {
 
         // execute the kernel
         int frame = 0;
-        pathtrace(frame, iteration);
+        pathtrace(frame, iteration, ui_denoise);
     }
 
     if (ui_renderMode == RenderMode::FULL) {

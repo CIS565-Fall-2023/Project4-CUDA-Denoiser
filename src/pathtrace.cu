@@ -173,6 +173,7 @@ __global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* g
 }
 
 static Scene * hst_scene = NULL;
+static glm::vec3* dev_imageRead = NULL;
 static glm::vec3 * dev_image = NULL;
 static Geom * dev_geoms = NULL;
 static Material * dev_materials = NULL;
@@ -181,6 +182,8 @@ static Intersection * dev_intersections = NULL;
 static GBufferPixel* dev_gBuffer = NULL;
 static Triangle* dev_tris = NULL;
 static BVHNode* dev_bvhNodes = NULL;
+__constant__ float dev_kernel[25];
+__constant__ int dev_offsets[50];
 // TODO: static variables for device memory, any extra info you need, etc
 // ...
 
@@ -196,6 +199,8 @@ void pathtraceInit(Scene* scene) {
 
 	cudaMalloc(&dev_image, pixelcount * sizeof(glm::vec3));
 	cudaMemset(dev_image, 0, pixelcount * sizeof(glm::vec3));
+
+	cudaMalloc(&dev_imageRead, pixelcount * sizeof(glm::vec3));
 
 	cudaMalloc(&dev_paths, pixelcount * sizeof(PathSegment));
 
@@ -223,6 +228,28 @@ void pathtraceInit(Scene* scene) {
 	cudaMemset(dev_cached_intersections, 0, pixelcount * sizeof(Intersection));
 #endif
 
+	// Computed 1/273*kernel separately and copying it here
+	const float kernel[] = 
+	{	
+		0.003663004f, 0.01465201f, 0.02564103f, 0.01465201f, 0.003663004f,
+		0.01465201f, 0.05860806f, 0.0952381f, 0.05860806f, 0.01465201f,
+		0.02564103f, 0.0952381f, 0.1501832f, 0.0952381f, 0.02564103f,
+		0.01465201f, 0.05860806f, 0.0952381f, 0.05860806f, 0.01465201f,
+		0.003663004f, 0.01465201f, 0.02564103f, 0.01465201f, 0.003663004f 
+	};
+
+	const glm::ivec2 offsets[] =
+	{
+		glm::ivec2(-2,-2), glm::ivec2(-2,-1), glm::ivec2(-2,0), glm::ivec2(-2,1), glm::ivec2(-2,2),
+		glm::ivec2(-1,-2), glm::ivec2(-1,-1), glm::ivec2(-1,0), glm::ivec2(-1,1), glm::ivec2(-1,2),
+		glm::ivec2(0,-2), glm::ivec2(0,-1), glm::ivec2(0,0), glm::ivec2(0,1), glm::ivec2(0,2),
+		glm::ivec2(1,-2), glm::ivec2(1,-1), glm::ivec2(1,0), glm::ivec2(1,1), glm::ivec2(1,2),
+		glm::ivec2(2,-2), glm::ivec2(2,-1), glm::ivec2(2,0), glm::ivec2(2,1), glm::ivec2(2,2)
+	};
+
+	cudaMemcpyToSymbol(dev_kernel, kernel, sizeof(kernel));
+	cudaMemcpyToSymbol(dev_offsets, offsets, sizeof(offsets));
+
 	checkCUDAError("pathtraceInit");
 }
 
@@ -235,6 +262,7 @@ void pathtraceFree() {
 	cudaFree(dev_materials);
 	cudaFree(dev_intersections);
 	cudaFree(dev_gBuffer);
+	cudaFree(dev_imageRead);
 	// TODO: clean up any extra device memory you created
 
 #if CACHE_FIRST_INTERSECTION
@@ -518,11 +546,37 @@ __global__ void finalGather(int nPaths, int nIters, glm::vec3* image, PathSegmen
 	}
 }
 
+__global__ void denoise(const glm::vec3* readFrameBuffer, glm::vec3* writeFrameBuffer, glm::ivec2 resolution)
+{
+	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+
+	if (x >= resolution.x || y >= resolution.y)
+	{
+		return;
+	}
+
+	int index = x * resolution.y + y;
+	writeFrameBuffer[index] = glm::vec3(0.0f);
+
+	for (int i = 0; i < 25; i++)
+	{
+		int readPxX = (blockIdx.x * blockDim.x) + threadIdx.x + dev_offsets[i * 2];
+		readPxX = glm::clamp(readPxX, 0, resolution.x - 1);
+
+		int readPxY = (blockIdx.y * blockDim.y) + threadIdx.y + dev_offsets[i * 2 + 1];
+		readPxY = glm::clamp(readPxY, 0, resolution.x - 1);
+
+		int readPxIdx = readPxX * resolution.x + readPxY;
+		writeFrameBuffer[index] += readFrameBuffer[readPxIdx] * dev_kernel[i];
+	}
+}
+
 /**
  * Wrapper for the __global__ call that sets up the kernel calls and does a ton
  * of memory management
  */
-void pathtrace(int frame, int iter) {
+void pathtrace(int frame, int iter, bool shouldDenoise) {
     const int traceDepth = hst_scene->state.traceDepth;
     const Camera &cam = hst_scene->state.camera;
     const int pixelcount = cam.resolution.x * cam.resolution.y;
@@ -681,6 +735,11 @@ void pathtrace(int frame, int iter) {
 	dim3 numBlocksPixels = (pixelcount + blockSize1d - 1) / blockSize1d;
 	finalGather << <numBlocksPixels, blockSize1d >> > (pixelcount, iter, dev_image, dev_paths);
 
+	if (shouldDenoise)
+	{
+		std::swap(dev_imageRead, dev_image);
+		denoise<<<blocksPerGrid2d, blockSize2d>>>(dev_imageRead, dev_image, hst_scene->state.camera.resolution);
+	}
 	///////////////////////////////////////////////////////////////////////////
 
     // CHECKITOUT: use dev_image as reference if you want to implement saving denoised images.
