@@ -96,7 +96,7 @@ __host__ __device__ glm::vec3 Sample_wh(glm::vec3 wo, float roughness, thrust::d
 __host__ __device__ glm::vec3 sampleSpecularReflectMaterial(
     const Material& m, const glm::vec3& normal, const glm::vec3& wo, glm::vec3& wi) {
     wi = glm::normalize(glm::reflect(wo, normal));
-    return m.specular.color / abs(glm::dot(glm::normalize(wi), normal));
+    return m.specular.color / abs(glm::dot(wi, normal));
 }
 
 __host__ __device__ glm::vec3 sampleSpecularTransmissionMaterial(

@@ -14,7 +14,6 @@ __host__ __device__ float powerHeuristic(int nf, float fPdf, int ng, float gPdf)
 
 __host__ __device__ glm::vec3 sampleMaterial(glm::vec3 intersect,
     glm::vec3 normal,
-    glm::vec3 tangent,
     const Material& m,
     const glm::vec3& wo,
     glm::vec3& wi,
@@ -110,7 +109,6 @@ void scatterRay(
         PathSegment & pathSegment,
         glm::vec3 intersect,
         glm::vec3 normal,
-        glm::vec3 tangent,
         const Material &m,
         thrust::default_random_engine &rng) {
     // TODO: implement this.
@@ -120,7 +118,7 @@ void scatterRay(
     float pdf = 1.0;
     glm::vec3 dir = pathSegment.ray.direction;
 
-    pathSegment.throughput *= sampleMaterial(intersect, normal, tangent, m, dir, pathSegment.ray.direction, pdf, pathSegment.isSpecularBounce, rng);
+    pathSegment.throughput *= sampleMaterial(intersect, normal, m, dir, pathSegment.ray.direction, pdf, pathSegment.isSpecularBounce, rng);
     if (length(pathSegment.throughput) == 0.0f || pdf == 0.0f) {
         pathSegment.remainingBounces = 0;
 		return;
@@ -199,7 +197,7 @@ __host__ __device__ glm::vec3 sampleUniformLight(
     }
 
     // bsdf part
-    glm::vec3 f = sampleMaterial(point, normal, tangent,
+    glm::vec3 f = sampleMaterial(point, normal,
         material, woW, wiW, scatterPdf, specular, rng);
     f *= abs(dot(wiW, normal));
 

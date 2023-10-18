@@ -197,3 +197,9 @@ struct KDAccelNode{
     int axis;
     AABB aabb;
 };
+
+struct GBufferPixel {
+    float t;
+    glm::vec3 normal;
+    glm::vec3 position;
+};

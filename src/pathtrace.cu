@@ -18,17 +18,18 @@
 #define ERRORCHECK 0
 
 #define SORT_MATERIALS 0
-#define FIRST_BOUNCE_CACHE 1
-#define ANTI_ALIASING 1
+#define FIRST_BOUNCE_CACHE 0
+#define ANTI_ALIASING 0
 
-#define NAIVE 0
+#define SIMPLE 0
+#define NAIVE 1
 #define DIRECT_MIS 0
-#define FULL 1
-#define RUSSIAN_ROULETTE 1
+#define FULL 0
+#define RUSSIAN_ROULETTE 0
 
 #define SUB_SCATTERING 0
 
-#define USE_KD_TREE 1
+#define USE_KD_TREE 0
 
 #define FILENAME (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 #define checkCUDAError(msg) checkCUDAErrorFn(msg, FILENAME, __LINE__)
@@ -105,6 +106,7 @@ static Light* dev_lights = NULL;
 static Material* dev_materials = NULL;
 static PathSegment* dev_paths = NULL;
 static ShadeableIntersection* dev_intersections = NULL;
+static GBufferPixel* dev_gBuffer = NULL;
 
 #if FIRST_BOUNCE_CACHE
 static ShadeableIntersection* dev_first_bounce_cache = NULL;
@@ -179,6 +181,8 @@ void pathtraceInit(Scene* scene) {
 		cudaMalloc(&dev_textureInfos, scene->textureInfos.size() * sizeof(TextureInfo));
 		cudaMemcpy(dev_textureInfos, scene->textureInfos.data(), scene->textureInfos.size() * sizeof(TextureInfo), cudaMemcpyHostToDevice);
 	}
+
+	cudaMalloc(&dev_gBuffer, pixelcount * sizeof(GBufferPixel));
 	
 	checkCUDAError("pathtraceInit");
 }
@@ -209,6 +213,8 @@ void pathtraceFree() {
 		cudaFree(dev_texturemaps);
 		cudaFree(dev_textureInfos);
 	}
+
+	cudaFree(dev_gBuffer);
 
 	checkCUDAError("pathtraceFree");
 }
@@ -428,7 +434,10 @@ __global__ void shadeNaive(
 			else {
 				scatterRay(cur,
 					getPointOnRay(cur.ray, intersection.t),
-					intersection.surfaceNormal, intersection.surfaceTangent, material, rng);
+					intersection.surfaceNormal, material, rng);
+				if (cur.remainingBounces == 0) {
+					cur.color += cur.throughput;
+				}
 			}
 			// If there was no intersection, color the ray black.
 			// Lots of renderers use 4 channel color, RGBA, where A = alpha, often
@@ -583,7 +592,7 @@ __global__ void shadeFull(
 			}
 
 			// Sample BSDF
-			scatterRay(cur, point, intersection.surfaceNormal, intersection.surfaceTangent, material, rng);
+			scatterRay(cur, point, intersection.surfaceNormal, material, rng);
 				
 #if SUB_SCATTERING
 			cur.medium.valid = false;
@@ -619,6 +628,81 @@ __global__ void shadeFull(
 			}
 			cur.remainingBounces = 0; // terminate path
 		}
+	}
+}
+
+__global__ void shadeSimpleMaterials(
+	int iter
+	, int num_paths
+	, ShadeableIntersection* shadeableIntersections
+	, PathSegment* pathSegments
+	, Material* materials
+)
+{
+	int idx = blockIdx.x * blockDim.x + threadIdx.x;
+	if (idx < num_paths)
+	{
+		ShadeableIntersection intersection = shadeableIntersections[idx];
+		PathSegment segment = pathSegments[idx];
+
+		if (intersection.t > 0.0f) { // if the intersection exists...
+			segment.remainingBounces--;
+			// Set up the RNG
+			thrust::default_random_engine rng = makeSeededRandomEngine(iter, idx, segment.remainingBounces);
+
+			Material material = materials[intersection.materialId];
+			glm::vec3 materialColor = material.color;
+
+			// If the material indicates that the object was a light, "light" the ray
+			if (material.emittance > 0.0f) {
+				segment.color += segment.throughput * (materialColor * material.emittance);
+				segment.remainingBounces = 0;
+			}
+			else {
+				segment.throughput *= materialColor;
+				glm::vec3 intersectPos = intersection.t * segment.ray.direction + segment.ray.origin;
+				glm::vec3 newDirection;
+				if (material.reflectivity > 0.0f) {
+					newDirection = glm::reflect(segment.ray.direction, intersection.surfaceNormal);
+				}
+				else {
+					float pdf = 1.0f;
+					newDirection = calculateRandomDirectionInHemisphere(intersection.surfaceNormal, rng, pdf);
+				}
+
+				segment.ray.direction = newDirection;
+				segment.ray.origin = intersectPos + (newDirection * 0.001f);
+			}
+
+			if (segment.remainingBounces == 0) {
+				segment.color += segment.throughput;
+			}
+			// If there was no intersection, color the ray black.
+			// Lots of renderers use 4 channel color, RGBA, where A = alpha, often
+			// used for opacity, in which case they can indicate "no opacity".
+			// This can be useful for post-processing and image compositing.
+		}
+		else {
+			segment.color = glm::vec3(0.0f);
+			segment.remainingBounces = 0;
+		}
+
+		pathSegments[idx] = segment;
+	}
+}
+
+__global__ void generateGBuffer(
+	int num_paths,
+	ShadeableIntersection* shadeableIntersections,
+	PathSegment* pathSegments,
+	GBufferPixel* gBuffer) {
+	int idx = blockIdx.x * blockDim.x + threadIdx.x;
+	if (idx < num_paths)
+	{
+		ShadeableIntersection curIsect = shadeableIntersections[idx];
+		gBuffer[idx].t = curIsect.t;
+		gBuffer[idx].normal = curIsect.surfaceNormal;
+		gBuffer[idx].position = curIsect.t < 0.0f ? glm::vec3(0.f) : getPointOnRay(pathSegments[idx].ray, curIsect.t);
 	}
 }
 
@@ -692,10 +776,16 @@ void pathtrace(uchar4* pbo, int frame, int iter) {
 	// --- PathSegment Tracing Stage ---
 	// Shoot ray into scene, bounce between objects, push shading chunks
 
+	// Empty gbuffer
+	cudaMemset(dev_gBuffer, 0, pixelcount * sizeof(GBufferPixel));
+
+	// clean shading chunks
+	cudaMemset(dev_intersections, 0, pixelcount * sizeof(ShadeableIntersection));
+
 	bool iterationComplete = false;
 	while (!iterationComplete) {
 		// clean shading chunks
-		cudaMemset(dev_intersections, 0, num_paths * sizeof(ShadeableIntersection));
+		//cudaMemset(dev_intersections, 0, num_paths * sizeof(ShadeableIntersection));
 
 		// tracing
 		dim3 numblocksPathSegmentTracing = (num_paths + blockSize1d - 1) / blockSize1d;
@@ -753,7 +843,12 @@ void pathtrace(uchar4* pbo, int frame, int iter) {
 				);
 	#endif // USE_KD_TREE
 #endif
+		checkCUDAError("trace one bounce");
+		cudaDeviceSynchronize();
 
+		if (depth == 0) {
+			generateGBuffer << <numblocksPathSegmentTracing, blockSize1d >> > (num_paths, dev_intersections, dev_paths, dev_gBuffer);
+		}
 		depth++;
 
 		// sort by material?
@@ -768,7 +863,15 @@ void pathtrace(uchar4* pbo, int frame, int iter) {
 	  // materials you have in the scenefile.
 	  // TODO: compare between directly shading the path segments and shading
 	  // path segments that have been reshuffled to be contiguous in memory.
-
+#if SIMPLE
+	shadeSimpleMaterials << <numblocksPathSegmentTracing, blockSize1d >> > (
+		iter,
+		num_paths,
+		dev_intersections,
+		dev_paths,
+		dev_materials
+		);
+#endif
 #if NAIVE
 		shadeNaive << <numblocksPathSegmentTracing, blockSize1d >> > (
 			iter,
