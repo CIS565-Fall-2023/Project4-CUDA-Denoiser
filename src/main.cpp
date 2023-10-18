@@ -169,8 +169,8 @@ void runCuda() {
         pathtrace(frame, iteration);
     }
 
-    if (ui_showGbuffer) {
-      showGBuffer(pbo_dptr);
+    if (ui_showGbuffer || ui_showGbufferNormal || ui_showGbufferPos) {
+      showGBuffer(pbo_dptr, ui_showGbuffer, ui_showGbufferNormal, ui_showGbufferPos);
     } else {
       showImage(pbo_dptr, iteration);
     }

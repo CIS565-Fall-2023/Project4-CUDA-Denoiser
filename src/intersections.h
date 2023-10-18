@@ -27,10 +27,6 @@ __host__ __device__ glm::vec3 getPointOnRay(Ray r, float t) {
     return r.origin + (t - .0001f) * glm::normalize(r.direction);
 }
 
-__host__ __device__ glm::vec3 getWorldPos(Ray r, float t) {
-    return r.origin + t * glm::normalize(r.direction);
-}
-
 /**
  * Multiplies a mat4 and a vec4 and returns a vec3 clipped from the vec4.
  */
