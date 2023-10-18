@@ -45,6 +45,10 @@ int iteration;
 int width;
 int height;
 
+// customized UI
+bool ui_showGbufferNormal = false;
+bool ui_showGbufferPos = false;
+
 //-------------------------------
 //-------------MAIN--------------
 //-------------------------------
