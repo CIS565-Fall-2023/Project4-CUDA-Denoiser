@@ -200,7 +200,8 @@ void pathtraceInit(Scene* scene) {
 	cudaMalloc(&dev_intersections, pixelcount * sizeof(Intersection));
 	cudaMemset(dev_intersections, 0, pixelcount * sizeof(Intersection));
 
-	cudaMalloc(&dev_gBuffer, pixelcount * sizeof(GBufferPixel));
+    cudaMalloc(&dev_gBuffer, pixelcount * sizeof(GBufferPixel));
+
     // TODO: initialize any extra device memeory you need
 
 #if CACHE_FIRST_INTERSECTION
@@ -610,6 +611,9 @@ void pathtrace(int frame, int iter) {
 			cudaMemcpy(dev_cached_intersections, dev_intersections, pixelcount * sizeof(Intersection), cudaMemcpyDeviceToDevice);
 		}
 #endif
+		if (depth == 0) {
+			generateGBuffer << <numblocksPathSegmentTracing, blockSize1d >> > (num_paths, dev_intersections, dev_paths, dev_gBuffer);
+		}
 
 		depth++;
 

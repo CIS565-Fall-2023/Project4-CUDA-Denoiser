@@ -1,4 +1,4 @@
-//#define _CRT_SECURE_NO_DEPRECATE
+#define _CRT_SECURE_NO_DEPRECATE
 #include <ctime>
 #include "main.h"
 #include "preview.h"
@@ -14,17 +14,14 @@ GLuint texcoordsLocation = 1;
 GLuint pbo;
 GLuint displayImage;
 
-GLFWwindow* window;
-GuiDataContainer* imguiData = NULL;
-ImGuiIO* io = nullptr;
-bool mouseOverImGuiWinow = false;
+GLFWwindow *window;
 
 std::string currentTimeString() {
-	time_t now;
-	time(&now);
-	char buf[sizeof "0000-00-00_00-00-00z"];
-	strftime(buf, sizeof buf, "%Y-%m-%d_%H-%M-%Sz", gmtime(&now));
-	return std::string(buf);
+    time_t now;
+    time(&now);
+    char buf[sizeof "0000-00-00_00-00-00z"];
+    strftime(buf, sizeof buf, "%Y-%m-%d_%H-%M-%Sz", gmtime(&now));
+    return std::string(buf);
 }
 
 //-------------------------------
@@ -32,27 +29,27 @@ std::string currentTimeString() {
 //-------------------------------
 
 void initTextures() {
-	glGenTextures(1, &displayImage);
-	glBindTexture(GL_TEXTURE_2D, displayImage);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
+    glGenTextures(1, &displayImage);
+    glBindTexture(GL_TEXTURE_2D, displayImage);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexImage2D( GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
 }
 
 void initVAO(void) {
-	GLfloat vertices[] = {
-		-1.0f, -1.0f,
-		1.0f, -1.0f,
-		1.0f,  1.0f,
-		-1.0f,  1.0f,
-	};
+    GLfloat vertices[] = {
+        -1.0f, -1.0f,
+        1.0f, -1.0f,
+        1.0f,  1.0f,
+        -1.0f,  1.0f,
+    };
 
-	GLfloat texcoords[] = {
-		1.0f, 1.0f,
-		0.0f, 1.0f,
-		0.0f, 0.0f,
-		1.0f, 0.0f
-	};
+    GLfloat texcoords[] = {
+        1.0f, 1.0f,
+        0.0f, 1.0f,
+        0.0f, 0.0f,
+        1.0f, 0.0f
+    };
 
 	GLushort indices[] = { 0, 1, 3, 3, 1, 2 };
 
@@ -158,20 +155,11 @@ bool init() {
 	glfwSetCursorPosCallback(window, mousePositionCallback);
 	glfwSetMouseButtonCallback(window, mouseButtonCallback);
 
-	// Set up GL context
-	glewExperimental = GL_TRUE;
-	if (glewInit() != GLEW_OK) {
-		return false;
-	}
-	printf("Opengl Version:%s\n", glGetString(GL_VERSION));
-	//Set up ImGui
-
-	IMGUI_CHECKVERSION();
-	ImGui::CreateContext();
-	io = &ImGui::GetIO(); (void)io;
-	ImGui::StyleColorsLight();
-	ImGui_ImplGlfw_InitForOpenGL(window, true);
-	ImGui_ImplOpenGL3_Init("#version 120");
+    // Set up GL context
+    glewExperimental = GL_TRUE;
+    if (glewInit() != GLEW_OK) {
+        return false;
+    }
 
 	// Initialize other stuff
 	initVAO();
@@ -248,18 +236,17 @@ void drawGui(int windowWidth, int windowHeight) {
 }
 
 void mainLoop() {
-	while (!glfwWindowShouldClose(window)) {
-		
-		glfwPollEvents();
+    while (!glfwWindowShouldClose(window)) {
+        glfwPollEvents();
+        runCuda();
 
-		runCuda();
+        string title = "CIS565 Path Tracer | " + utilityCore::convertIntToString(iteration) + " Iterations";
+        glfwSetWindowTitle(window, title.c_str());
 
-		string title = "CIS565 Path Tracer | " + utilityCore::convertIntToString(iteration) + " Iterations";
-		glfwSetWindowTitle(window, title.c_str());
-		glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo);
-		glBindTexture(GL_TEXTURE_2D, displayImage);
-		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-		glClear(GL_COLOR_BUFFER_BIT);
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo);
+        glBindTexture(GL_TEXTURE_2D, displayImage);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+        glClear(GL_COLOR_BUFFER_BIT);
 
         // VAO, shader program, and texture already bound
         glDrawElements(GL_TRIANGLES, 6,  GL_UNSIGNED_SHORT, 0);

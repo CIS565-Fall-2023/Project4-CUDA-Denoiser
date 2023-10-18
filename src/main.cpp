@@ -219,33 +219,33 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
 }
 
 void mousePositionCallback(GLFWwindow* window, double xpos, double ypos) {
-	if (xpos == lastX || ypos == lastY) return; // otherwise, clicking back into window causes re-start
-	if (leftMousePressed) {
-		// compute new camera parameters
-		phi -= (xpos - lastX) / width;
-		theta -= (ypos - lastY) / height;
-		theta = std::fmax(0.001f, std::fmin(theta, PI));
-		camchanged = true;
-	}
-	else if (rightMousePressed) {
-		zoom += (ypos - lastY) / height;
-		zoom = std::fmax(0.1f, zoom);
-		camchanged = true;
-	}
-	else if (middleMousePressed) {
-		renderState = &scene->state;
-		Camera& cam = renderState->camera;
-		glm::vec3 forward = cam.view;
-		forward.y = 0.0f;
-		forward = glm::normalize(forward);
-		glm::vec3 right = cam.right;
-		right.y = 0.0f;
-		right = glm::normalize(right);
+  if (xpos == lastX || ypos == lastY) return; // otherwise, clicking back into window causes re-start
+  if (leftMousePressed) {
+    // compute new camera parameters
+    phi -= (xpos - lastX) / width;
+    theta -= (ypos - lastY) / height;
+    theta = std::fmax(0.001f, std::fmin(theta, PI));
+    camchanged = true;
+  }
+  else if (rightMousePressed) {
+    zoom += (ypos - lastY) / height;
+    zoom = std::fmax(0.1f, zoom);
+    camchanged = true;
+  }
+  else if (middleMousePressed) {
+    renderState = &scene->state;
+    Camera &cam = renderState->camera;
+    glm::vec3 forward = cam.view;
+    forward.y = 0.0f;
+    forward = glm::normalize(forward);
+    glm::vec3 right = cam.right;
+    right.y = 0.0f;
+    right = glm::normalize(right);
 
-		cam.lookAt -= (float)(xpos - lastX) * right * 0.01f;
-		cam.lookAt += (float)(ypos - lastY) * forward * 0.01f;
-		camchanged = true;
-	}
-	lastX = xpos;
-	lastY = ypos;
+    cam.lookAt -= (float) (xpos - lastX) * right * 0.01f;
+    cam.lookAt += (float) (ypos - lastY) * forward * 0.01f;
+    camchanged = true;
+  }
+  lastX = xpos;
+  lastY = ypos;
 }
