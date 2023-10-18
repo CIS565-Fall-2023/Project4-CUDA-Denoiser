@@ -10,7 +10,7 @@ class Scene;
 struct DenoiseConfig
 {
 	bool	denoise = false;
-	int		filterSize = 80;
+	int		level = 3;
 	float	colorWeight = 0.45f;
 	float	normalWeight = 0.35f;
 	float	positionWeight = 0.2f;

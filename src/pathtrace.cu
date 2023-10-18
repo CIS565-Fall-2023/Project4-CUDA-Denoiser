@@ -175,7 +175,7 @@ __global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, Path
 
 		glm::vec2 coord = { x, y };
 		
-		//coord += glm::vec2(rng.rand(), rng.rand());
+		coord += glm::vec2(rng.rand(), rng.rand());
 
 		segment.ray = CastRay(cam, coord, { rng.rand(), rng.rand() });
 		segment.pixelIndex = index;
@@ -404,19 +404,19 @@ __global__ void KernelDenoise(const glm::ivec2 resolution, const GInfo* gbuffer,
 	float cum_weight = 0.f;
 	glm::vec3 sum = glm::vec3(0.f);
 	
-	const float kernel[25] {
-		0.0030, 0.0133, 0.0219, 0.0133, 0.0030,
-		0.0133, 0.0596, 0.0983, 0.0596, 0.0133,
-		0.0219, 0.0983, 0.1621, 0.0983, 0.0219,
-		0.0133, 0.0596, 0.0983, 0.0596, 0.0133,
-		0.0030, 0.0133, 0.0219, 0.0133, 0.0030
-	};
-
-	for (int x = -2; x <= 2; ++x)
+	//const float kernel[25] {
+	//	0.0030, 0.0133, 0.0219, 0.0133, 0.0030,
+	//	0.0133, 0.0596, 0.0983, 0.0596, 0.0133,
+	//	0.0219, 0.0983, 0.1621, 0.0983, 0.0219,
+	//	0.0133, 0.0596, 0.0983, 0.0596, 0.0133,
+	//	0.0030, 0.0133, 0.0219, 0.0133, 0.0030
+	//};
+	const float kernel[5]{1.f / 16.f, 1.f / 4.f, 3.f / 8.f, 1.f/ 4.f, 1.f / 16.f};
+ 	for (int h = -2; h <= 2; ++h)
 	{
-		for (int y = -2; y <= 2; ++y)
+		for (int w = -2; w <= 2; ++w)
 		{
-			const int id = index + (x + y * (resolution.x)) * step_size;
+			const int id = index + (w + h * (resolution.x)) * step_size;
 			if (id >= 0 && id < resolution.x * resolution.y)
 			{
 				const glm::vec3 color_temp = denoised_img_r[id];
@@ -427,19 +427,17 @@ __global__ void KernelDenoise(const glm::ivec2 resolution, const GInfo* gbuffer,
 				float color_weight = glm::min(glm::exp(-dist2 / color_phi), 1.f);
 
 				GInfo info = gbuffer[id];
-				glm::vec3 normal_temp = info.normal;
-				t = normal - normal_temp;
+				t = normal - info.normal;
 				dist2 = glm::min(glm::dot(t, t) / (step_size * step_size), 0.f);
 				float normal_weight = glm::min(glm::exp(-dist2 / normal_phi), 1.f);
 
-				glm::vec3 position_temp = info.position;
-				t = position - position_temp;
-				dist2 = glm::min(glm::dot(t, t) / (step_size * step_size), 0.f);
+				t = position - info.position;
+				dist2 = glm::dot(t, t);
 				float position_weight = glm::min(glm::exp(-dist2 / position_phi), 1.f);
 
 				float weight = color_weight * normal_weight * position_weight;
-				sum += color_temp * weight * kernel[(x + 2) + (y + 2) * 5];
-				cum_weight += weight * kernel[(x + 2) + (y + 2) * 5];
+				sum += color_temp * weight * kernel[(w + 2)] * kernel[(h + 2)];
+				cum_weight += weight * kernel[(w + 2)] * kernel[(h + 2)];
 			}
 		}
 	}
@@ -616,11 +614,9 @@ CPU_ONLY void CudaPathTracer::Render(GPUScene& scene,
 		cudaMemcpy(dev_denoised_img_r, dev_hdr_img, pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToDevice);
 
 		// denoise pass
-		int step = 1;
-		int it = 1;
-		while (step < 8)
+		for(int it = 1, step = 1; it <= m_DenoiseConfig.level; ++it, step <<= 1)
 		{
-			float scaler = pow(2, -it);
+			float scaler = 1.f;// pow(2, -it);
 			KernelDenoise << <blocksPerGrid2d, blockSize2d >> > (resolution, dev_gbuffer, 
 																 dev_denoised_img_r, dev_denoised_img_w, 
 																 m_DenoiseConfig.colorWeight * scaler,
@@ -629,8 +625,6 @@ CPU_ONLY void CudaPathTracer::Render(GPUScene& scene,
 																 step);
 
 			std::swap(dev_denoised_img_r, dev_denoised_img_w);
-			step <<= 1;
-			++it;
 		}
 		sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (dev_img, resolution, dev_denoised_img_r, dev_gbuffer, m_DisplayMode);
 	}
