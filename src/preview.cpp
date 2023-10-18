@@ -221,7 +221,9 @@ void drawGui(int windowWidth, int windowHeight) {
 
     ImGui::Separator();
 
-    ImGui::Checkbox("Show GBuffer", &ui_showGbuffer);
+    const int count = static_cast<int>(RenderMode::COUNT);
+    const char* labels[count] = { "Full", "Positions", "Normals" };
+    ImGui::Combo("Render Mode", reinterpret_cast<int*>(&ui_renderMode), labels, count);
 
     ImGui::Separator();
 

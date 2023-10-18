@@ -52,3 +52,11 @@ namespace utilityCore {
     extern std::string convertIntToString(int number);
     extern std::istream& safeGetline(std::istream& is, std::string& t); //Thanks to http://stackoverflow.com/a/6089413
 }
+
+enum class RenderMode
+{
+    FULL,
+    POSITIONS,
+    NORMALS,
+    COUNT
+};
