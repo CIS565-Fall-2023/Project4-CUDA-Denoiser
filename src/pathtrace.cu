@@ -70,7 +70,7 @@ __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution,
 }
 
 
-__global__ void denoise(glm::ivec2 resolution,
+__global__ void denoise(glm::ivec2 resolution, Camera cam,
 	float colWeight, float norWeight, float posWeight, int step,
 	int iter, glm::vec3* image, GBufferPixel* gBuffer) {
 	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
@@ -82,7 +82,11 @@ __global__ void denoise(glm::ivec2 resolution,
 		glm::vec3 sum = glm::vec3(0.);
 		glm::vec3 col = image[index] / (float)iter;
 		glm::vec3 nor = gBuffer[index].normal;
-		glm::vec3 pos = gBuffer[index].pos;
+		glm::vec3 dir = glm::normalize(cam.view
+			- cam.right * cam.pixelLength.x * ((float)x - (float)cam.resolution.x * 0.5f)
+			- cam.up * cam.pixelLength.y * ((float)y - (float)cam.resolution.y * 0.5f));
+		glm::vec3 pos = gBuffer[index].t * dir + cam.position;
+		// glm::vec3 pos = gBuffer[index].pos;
 
 		//  0.0625, 0.25, 0.375, 0.25, 0.0625
 		const float kernel[25] = {
@@ -111,7 +115,11 @@ __global__ void denoise(glm::ivec2 resolution,
 					dist2 = glm::dot(t, t);
 					float nw = min(exp(-(dist2) / norWeight), 1.0f);
 
-					glm::vec3 tmpPos = gBuffer[tmpIndex].pos;
+					// glm::vec3 tmpPos = gBuffer[tmpIndex].pos;
+					glm::vec3 tmpDir = glm::normalize(cam.view
+						- cam.right * cam.pixelLength.x * ((float)nx - (float)cam.resolution.x * 0.5f)
+						- cam.up * cam.pixelLength.y * ((float)ny - (float)cam.resolution.y * 0.5f));
+					glm::vec3 tmpPos = gBuffer[index].t * tmpDir + cam.position;
 					t = pos - tmpPos;
 					dist2 = glm::dot(t, t);
 					float pw = min(exp(-(dist2) / posWeight), 1.0f);
@@ -145,13 +153,17 @@ __global__ void gbufferDepthToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPix
 }
 
 
-__global__ void gbufferPosToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* gBuffer) {
+__global__ void gbufferPosToPBO(uchar4* pbo, Camera cam, glm::ivec2 resolution, GBufferPixel* gBuffer) {
 	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
 	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
 
 	if (x < resolution.x && y < resolution.y) {
 		int index = x + (y * resolution.x);
-		glm::ivec3 p = glm::clamp((glm::ivec3)(gBuffer[index].pos / 10.0f * 256.0f), glm::ivec3(0), glm::ivec3(255));
+		glm::vec3 dir = glm::normalize(cam.view
+			- cam.right * cam.pixelLength.x * ((float)x - (float)cam.resolution.x * 0.5f)
+			- cam.up * cam.pixelLength.y * ((float)y - (float)cam.resolution.y * 0.5f));
+		glm::vec3 pos = gBuffer[index].t * dir + cam.position;
+		glm::ivec3 p = glm::clamp((glm::ivec3)(pos / 10.0f * 256.0f), glm::ivec3(0), glm::ivec3(255));
 
 		pbo[index].w = 0;
 		pbo[index].x = p.x;
@@ -328,7 +340,6 @@ __global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, Path
 		rz = ((rz > 0) ? 1 : -1) * sqrt(abs(rz));
 #endif
 
-		// TODO: implement antialiasing by jittering the ray
 		segment.ray.direction = glm::normalize(cam.view
 			- cam.right * cam.pixelLength.x * ((float)x - (float)cam.resolution.x * 0.5f)
 			- cam.up * cam.pixelLength.y * ((float)y - (float)cam.resolution.y * 0.5f)
@@ -687,7 +698,7 @@ __global__ void generateGBuffer(
 	if (idx < num_paths)
 	{
 		gBuffer[idx].t = shadeableIntersections[idx].t;
-		gBuffer[idx].pos = max(shadeableIntersections[idx].t, 0.0f) * glm::normalize(pathSegments[idx].ray.direction) + pathSegments[idx].ray.origin;
+		// gBuffer[idx].pos = max(shadeableIntersections[idx].t, 0.0f) * glm::normalize(pathSegments[idx].ray.direction) + pathSegments[idx].ray.origin;
 		gBuffer[idx].normal = shadeableIntersections[idx].surfaceNormal;
 	}
 }
@@ -989,7 +1000,7 @@ void showGBufferPos(uchar4* pbo) {
 
 	// std::cout << "showGBufferNormal" << std::endl;
 	// CHECKITOUT: process the gbuffer results and send them to OpenGL buffer for visualization
-	gbufferPosToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, dev_gBuffer);
+	gbufferPosToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam, cam.resolution, dev_gBuffer);
 }
 
 void showGBufferNormal(uchar4* pbo) {
@@ -1023,7 +1034,7 @@ void showDenoisedImage(uchar4* pbo, int iter, float colWeight, float norWeight, 
 		(cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
 
 	for (int i = 0; (1 << i) <= filterSize; i++) {
-		denoise << <blocksPerGrid2d, blockSize2d >> > (cam.resolution,
+		denoise << <blocksPerGrid2d, blockSize2d >> > (cam.resolution, cam,
 			colWeight, norWeight, posWeight, 1 << i,
 			iter, dev_image, dev_gBuffer);
 	}

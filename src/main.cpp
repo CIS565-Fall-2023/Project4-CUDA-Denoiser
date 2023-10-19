@@ -162,6 +162,7 @@ void runCuda() {
 		cameraPosition += cam.lookAt;
 		cam.position = cameraPosition;
 		camchanged = false;
+		img_denoised = false;
 	}
 
 	if (!denoiseChanged && ui_denoise) {
