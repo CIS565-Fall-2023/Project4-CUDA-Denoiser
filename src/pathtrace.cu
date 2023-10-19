@@ -70,18 +70,18 @@ __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution,
 	}
 }
 
-__global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* gBuffer) {
+__global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* gBuffer, bool showPosition) {
 	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
 	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
 	
 	if (x < resolution.x && y < resolution.y) {
 		int index = x + (y * resolution.x);
-		float timeToIntersect = gBuffer[index].t * 256.0;
+		glm::vec3 toShow = glm::abs(showPosition ? gBuffer[index].position / 10.f : gBuffer[index].normal) * 256.f;
 		
 		pbo[index].w = 0;
-		pbo[index].x = timeToIntersect;
-		pbo[index].y = timeToIntersect;
-		pbo[index].z = timeToIntersect;
+		pbo[index].x = glm::clamp((int)toShow.x, 0, 255);
+		pbo[index].y = glm::clamp((int)toShow.y, 0, 255);
+		pbo[index].z = glm::clamp((int)toShow.z, 0, 255);
     }
 }
 
@@ -322,7 +322,12 @@ __global__ void generateGBuffer (
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 	if (idx < num_paths)
 	{
-		gBuffer[idx].t = shadeableIntersections[idx].t;
+		ShadeableIntersection intersection = shadeableIntersections[idx];
+		PathSegment path = pathSegments[idx];
+		GBufferPixel &gb = gBuffer[idx];
+		//gb.t = intersection.t;
+		gb.normal = intersection.surfaceNormal;
+		gb.position = path.ray.origin + intersection.t * path.ray.direction;
 	}
 }
 
@@ -480,7 +485,7 @@ void pathtrace(int frame, int iter) {
 }
 
 // CHECKITOUT: this kernel "post-processes" the gbuffer/gbuffers into something that you can visualize for debugging.
-void showGBuffer(uchar4* pbo) {
+void showGBuffer(uchar4* pbo, bool showPosition) {
 	const Camera &cam = hst_scene->state.camera;
 	const dim3 blockSize2d(8, 8);
 	const dim3 blocksPerGrid2d(
@@ -488,7 +493,7 @@ void showGBuffer(uchar4* pbo) {
 		(cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
 	
 	// CHECKITOUT: process the gbuffer results and send them to OpenGL buffer for visualization
-	gbufferToPBO<<<blocksPerGrid2d, blockSize2d>>>(pbo, cam.resolution, dev_gBuffer);
+	gbufferToPBO<<<blocksPerGrid2d, blockSize2d>>>(pbo, cam.resolution, dev_gBuffer, showPosition);
 }
 
 void showImage(uchar4* pbo, int iter) {

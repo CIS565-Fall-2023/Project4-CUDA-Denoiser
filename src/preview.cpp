@@ -163,14 +163,6 @@ bool init() {
 		return false;
 	}
 	printf("Opengl Version:%s\n", glGetString(GL_VERSION));
-	//Set up ImGui
-
-	// IMGUI_CHECKVERSION();
-	// ImGui::CreateContext();
-	// io = &ImGui::GetIO(); (void)io;
-	// ImGui::StyleColorsLight();
-	// ImGui_ImplGlfw_InitForOpenGL(window, true);
-	// ImGui_ImplOpenGL3_Init("#version 120");
 
 	// Initialize other stuff
 	initVAO();
@@ -233,6 +225,7 @@ void drawGui(int windowWidth, int windowHeight) {
 	ImGui::Separator();
 	
 	ImGui::Checkbox("Show GBuffer", &ui_showGbuffer);
+	ImGui::Checkbox("Show Position", &ui_showPosition);
 	
 	ImGui::Separator();
 
@@ -315,9 +308,6 @@ void mainLoop() {
 
 		// VAO, shader program, and texture already bound
 		glDrawElements(GL_TRIANGLES, 6,  GL_UNSIGNED_SHORT, 0);
-
-		// Render ImGui Stuff
-		// RenderImGui();
 
 		// Draw imgui
 		int display_w, display_h;
