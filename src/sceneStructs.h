@@ -6,7 +6,7 @@
 #include "glm/glm.hpp"
 
 #define OCT_ENCODE_NORMAL
-#define RECORD_PATH_TRACE_AND_DENOISE_TIME
+// #define RECORD_PATH_TRACE_AND_DENOISE_TIME
 
 #define BACKGROUND_COLOR (glm::vec3(0.0f))
 #define BBOX_TRI_NUM 4
