@@ -2,7 +2,6 @@
 
 #include "intersections.h"
 
-// CHECKITOUT
 /**
  * Computes a cosine-weighted random direction in a hemisphere.
  * Used for diffuse lighting.
@@ -73,9 +72,6 @@ void scatterRay(
         glm::vec3 normal,
         const Material &m,
         thrust::default_random_engine &rng) {
-    // TODO: implement this.
-    // A basic implementation of pure-diffuse shading will just call the
-    // calculateRandomDirectionInHemisphere defined above.
     float counteract = 1.f;
     if (m.hasRefractive) {
         thrust::uniform_real_distribution<float> u01(0, 1);
