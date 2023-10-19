@@ -24,6 +24,7 @@ int ui_iterations = 0;
 int startupIterations = 0;
 int lastLoopIterations = 0;
 bool ui_showGbuffer = false;
+int ui_currGBuffer = 0;
 bool ui_denoise = false;
 int ui_filterSize = 80;
 float ui_colorWeight = 0.45f;
@@ -167,9 +168,13 @@ void runCuda() {
     }
 
     if (ui_showGbuffer) {
-      showGBuffer(pbo_dptr);
-    } else {
-      showImage(pbo_dptr, iteration);
+      showGBuffer(pbo_dptr, ui_currGBuffer);
+    } 
+    else if (ui_denoise) {
+        denoise(pbo_dptr, iteration, ui_colorWeight, ui_normalWeight, ui_positionWeight, ui_filterSize);
+    }
+    else {
+        showImage(pbo_dptr, iteration);
     }
 
     // unmap buffer object
