@@ -3,11 +3,16 @@ CUDA Denoiser For CUDA Path Tracer
 
 **University of Pennsylvania, CIS 565: GPU Programming and Architecture, Project 4**
 
-* (TODO) YOUR NAME HERE
-* Tested on: (TODO) Windows 22, i7-2222 @ 2.22GHz 22GB, GTX 222 222MB (Moore 2222 Lab)
+* Helena Zhang
+* Tested on: Windows 11, i7-10750 @ 2.6GHz 16GB, Geforce RTX 2060 6GB
 
-### (TODO: Your README)
+### Analysis
 
-*DO NOT* leave the README to the last minute! It is a crucial part of the
-project, and we will not be able to grade you without a good README.
-
+(Todo):
+ * How much time denoising adds to rendering: Nsight compute overall process & atrous kernel
+ * how denoising influences the number of iterations needed to get an "acceptably smooth" result
+ * how denoising at different resolutions impacts runtime: nsight compute # of pixels vs runtime
+ * how varying filter sizes affect performance: nsight compute filter size vs runtime
+ * how visual results vary with filter size -- does the visual quality scale uniformly with filter size?
+ * how effective/ineffective is this method with different material types
+ * how do results compare across different scenes - for example, between cornell.txt and cornell_ceiling_light.txt. Does one scene produce better denoised results? Why or why not?
