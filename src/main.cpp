@@ -23,6 +23,7 @@ SceneConfig* scene_config;
 GuiDataContainer* guiData;
 RenderState* renderState;
 int iteration;
+RenderBufferType renderBufferType = RenderBufferType::COLOR;
 
 int width;
 int height;
@@ -147,7 +148,7 @@ void runCuda() {
 		
 		// execute the kernel
 		int frame = 0;
-		pathtrace(pbo_dptr, frame, iteration);
+		pathtrace(pbo_dptr, frame, iteration, renderBufferType);
 
 		// unmap buffer object
 		cudaGLUnmapBufferObject(pbo);
@@ -193,6 +194,16 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
 void setCameraChanged(bool val)
 {
 	camchanged = val;
+}
+
+void setRenderBufferType(RenderBufferType type)
+{
+	renderBufferType = type;
+}
+
+int getRenderBufferType()
+{
+	return renderBufferType;
 }
 
 void mousePositionCallback(GLFWwindow* window, double xpos, double ypos) {

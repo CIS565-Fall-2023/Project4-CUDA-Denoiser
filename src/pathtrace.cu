@@ -75,7 +75,8 @@ __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution,
 
 	if (x < resolution.x && y < resolution.y) {
 		int index = x + (y * resolution.x);
-		glm::vec3 pixel = image[index] / float(iter);
+		//glm::vec3 pixel = image[index] / float(iter);
+		glm::vec3 pixel = image[index];
 		glm::vec3 c;
 		glm::ivec3 color;
 #if TONE_MAPPING
@@ -103,6 +104,9 @@ __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution,
 static SceneConfig* scene_config = NULL;
 static GuiDataContainer* guiData = NULL;
 static glm::vec3* dev_image = NULL;
+static glm::vec3* dev_normal = nullptr;
+static glm::vec3* dev_position = nullptr;
+static glm::vec3* dev_pathtrace = nullptr;
 static PathSegment* dev_paths = NULL;
 static ShadeableIntersection* dev_intersections = NULL;
 static Triangle* dev_triangles= nullptr;
@@ -248,6 +252,12 @@ void pathtraceInit(SceneConfig* hst_scene) {
 
 	cudaMalloc(&dev_image, pixelcount * sizeof(glm::vec3));
 	cudaMemset(dev_image, 0, pixelcount * sizeof(glm::vec3));
+	cudaMalloc(&dev_normal, pixelcount * sizeof(glm::vec3));
+	cudaMemset(dev_normal, 0, pixelcount * sizeof(glm::vec3));
+	cudaMalloc(&dev_position, pixelcount * sizeof(glm::vec3));
+	cudaMemset(dev_position, 0, pixelcount * sizeof(glm::vec3));
+	cudaMalloc(&dev_pathtrace, pixelcount * sizeof(glm::vec3));
+	cudaMemset(dev_pathtrace, 0, pixelcount * sizeof(glm::vec3));
 
 	cudaMalloc(&dev_paths, pixelcount * sizeof(PathSegment));
 
@@ -451,6 +461,8 @@ __global__ void shadeBSDF(
 			if (bsdfStruct.bsdfType == BSDFType::EMISSIVE) {
 				pathSegments[idx].remainingBounces = 0;
 				if (depth == 0) {
+					pathSegment.firstBounceNormal = intersection.surfaceNormal;
+					pathSegment.firstBouncePosition = intersection.intersectionPoint;
 					pathSegment.color = bsdfStruct.emissiveFactor * bsdfStruct.strength;
 				}
 				else {
@@ -467,6 +479,10 @@ __global__ void shadeBSDF(
 				}
 			}
 			else {
+				if (depth == 0) {
+					pathSegment.firstBounceNormal = intersection.surfaceNormal;
+					pathSegment.firstBouncePosition = intersection.intersectionPoint;
+				}
 				glm::mat3x3 o2w;
 				make_coord_space(o2w, intersection.surfaceNormal);
 				glm::mat3x3 w2o(glm::transpose(o2w));
@@ -549,6 +565,10 @@ __global__ void shadeBSDF(
 			}
 		}
 		else {
+			if (depth == 0) {
+				pathSegment.firstBounceNormal = glm::vec3(0.0f);
+				pathSegment.firstBouncePosition = FLT_MAX * pathSegment.ray.direction;
+			}
 #if USE_ENV_MAP
 			const auto & d = pathSegment.ray.direction;
 			const float phi = atan2f(d.z, d.x);
@@ -578,14 +598,28 @@ __global__ void shadeBSDF(
 }
 
 // Add the current iteration's output to the overall image
-__global__ void finalGather(int nPaths, glm::vec3* image, PathSegment* iterationPaths)
+__global__ void finalGather(int nPaths, glm::vec3* colorBuffer,
+	glm::vec3 * normalBuffer, glm::vec3 * positionBuffer,
+	PathSegment* pathSegments)
 {
 	int index = (blockIdx.x * blockDim.x) + threadIdx.x;
 
 	if (index < nPaths)
 	{
-		PathSegment iterationPath = iterationPaths[index];
-		image[iterationPath.pixelIndex] += iterationPath.color;
+		colorBuffer[pathSegments[index].pixelIndex] += pathSegments[index].color;
+		normalBuffer[pathSegments[index].pixelIndex] += pathSegments[index].firstBounceNormal;
+		positionBuffer[pathSegments[index].pixelIndex] += pathSegments[index].firstBouncePosition;
+	}
+}
+
+__global__ void copyBuffer(glm::ivec2 resolution, glm::vec3* image, glm::vec3 * buffer, int nIter) {
+	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+
+	if (x < resolution.x && y < resolution.y) {
+		int index = x + (y * resolution.x);
+		image[index] = buffer[index] / float(nIter);
+		//image[index] = buffer[index];
 	}
 }
 
@@ -610,7 +644,7 @@ struct HasHit{
  * Wrapper for the __global__ call that sets up the kernel calls and does a ton
  * of memory management
  */
-void pathtrace(uchar4* pbo, int frame, int iter) {
+void pathtrace(uchar4* pbo, int frame, int iter, RenderBufferType renderBufferType) {
 	checkCUDAError("before generate camera ray");
 
 	const int traceDepth = scene_config->state.traceDepth;
@@ -764,8 +798,28 @@ void pathtrace(uchar4* pbo, int frame, int iter) {
 	// Assemble this iteration and apply it to the image
 	dim3 numBlocksPixels = (pixelcount + blockSize1d - 1) / blockSize1d;
 	// dim3 numBlocksPixels = (num_paths + blockSize1d - 1) / blockSize1d;
-	finalGather << <numBlocksPixels, blockSize1d >> > (pixelcount, dev_image, dev_paths);
-
+	cudaMemset(dev_image, 0, pixelcount * sizeof(glm::vec3)); // clear image
+	finalGather << <numBlocksPixels, blockSize1d >> > (pixelcount, dev_pathtrace, dev_normal, dev_position, dev_paths);
+	glm::vec3* buffer = dev_pathtrace;
+	switch (renderBufferType)
+	{
+	case COLOR:
+		buffer = dev_pathtrace;
+		break;
+	case NORMAL:
+		buffer = dev_normal;
+		break;
+	case POSITION:
+		buffer = dev_position;
+		break;
+	case DEPTH:
+		assert(0);
+		break;
+	default:
+		assert(0);
+		break;
+	}
+	copyBuffer << <blocksPerGrid2d, blockSize2d >> > (cam.resolution, dev_image, buffer, iter);
 	///////////////////////////////////////////////////////////////////////////
 	//int imageWidth = scene_config->state.camera.resolution.x;
 	//int imageHeight = scene_config->state.camera.resolution.y;

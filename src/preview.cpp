@@ -209,6 +209,12 @@ void RenderImGui()
 	//ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
 	//ImGui::Checkbox("Demo Window", &show_demo_window);      // Edit bools storing our window open/close state
 	//ImGui::Checkbox("Another Window", &show_another_window);
+	int renderBufferTypeNum = getRenderBufferType();
+	const char* splineTypes[] = { "Pathtrace", "Normal", "Position"};
+
+	// Set spline type
+	ImGui::Combo("Type", &renderBufferTypeNum, splineTypes, IM_ARRAYSIZE(splineTypes));
+	setRenderBufferType((RenderBufferType)renderBufferTypeNum);
 
 	if (ImGui::SliderFloat("Depth of Field", &scene_config->state.camera.focalDistance, 3.0f, 10.0f)) {
 		setCameraChanged(true);

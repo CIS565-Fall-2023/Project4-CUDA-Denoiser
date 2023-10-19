@@ -100,6 +100,8 @@ struct PathSegment {
     int remainingBounces;
     glm::vec3 constantTerm;
     float prevPDF;
+    glm::vec3 firstBouncePosition;
+    glm::vec3 firstBounceNormal;
 };
 
 
