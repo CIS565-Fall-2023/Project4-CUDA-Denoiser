@@ -15,6 +15,9 @@
 #include "interactions.h"
 
 #define ERRORCHECK 1
+#define GBUFF_NOR 0
+#define GBUFF_POS !GBUFF_NOR
+
 
 #define FILENAME (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 #define checkCUDAError(msg) checkCUDAErrorFn(msg, FILENAME, __LINE__)
@@ -73,12 +76,28 @@ __global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* g
 
     if (x < resolution.x && y < resolution.y) {
         int index = x + (y * resolution.x);
-        float timeToIntersect = gBuffer[index].t * 256.0;
+
+#if GBUFF_NOR
+        glm::vec3 color = gBuffer[index].normal * 0.5f + 0.5f;
+        color.x = glm::clamp((int) (color.x * 255.0), 0, 255); // color only goes from 0 to 255!!!
+        color.y = glm::clamp((int) (color.y * 255.0), 0, 255);
+        color.z = glm::clamp((int) (color.z * 255.0), 0, 255);
 
         pbo[index].w = 0;
-        pbo[index].x = timeToIntersect;
-        pbo[index].y = timeToIntersect;
-        pbo[index].z = timeToIntersect;
+        pbo[index].x = color.x;
+        pbo[index].y = color.y;
+        pbo[index].z = color.z;
+#elif GBUFF_POS
+        glm::vec3 color = gBuffer[index].position;
+        color.x = glm::clamp((int)(color.x * 255.0), 0, 255); // color only goes from 0 to 255!!!
+        color.y = glm::clamp((int)(color.y * 255.0), 0, 255);
+        color.z = glm::clamp((int)(color.z * 255.0), 0, 255);
+
+        pbo[index].w = 0;
+        pbo[index].x = color.x;
+        pbo[index].y = color.y;
+        pbo[index].z = color.z;
+#endif
     }
 }
 
@@ -221,6 +240,7 @@ __global__ void computeIntersections(
 			intersections[path_index].t = t_min;
 			intersections[path_index].materialId = geoms[hit_geom_index].materialid;
 			intersections[path_index].surfaceNormal = normal;
+            intersections[path_index].position = intersect_point;
 		}
 	}
 }
@@ -281,7 +301,14 @@ __global__ void generateGBuffer (
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
   if (idx < num_paths)
   {
-    gBuffer[idx].t = shadeableIntersections[idx].t;
+    //gBuffer[idx].t = shadeableIntersections[idx].t;
+
+#if GBUFF_NOR
+      gBuffer[idx].normal = shadeableIntersections[idx].surfaceNormal;
+#elif GBUFF_POS
+      gBuffer[idx].position = shadeableIntersections[idx].position;
+
+#endif
   }
 }
 
