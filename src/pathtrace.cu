@@ -1,4 +1,4 @@
-#include <cstdio>
+                                  #include <cstdio>
 #include <cuda.h>
 #include <cmath>
 #include <thrust/execution_policy.h>
@@ -84,6 +84,10 @@ __global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* g
 
 static Scene * hst_scene = NULL;
 static glm::vec3 * dev_image = NULL;
+static glm::vec3 * dev_image_new = NULL;
+static glm::vec3 * dev_image_old = NULL;
+static float* dev_kernel;
+
 static Geom * dev_geoms = NULL;
 static Material * dev_materials = NULL;
 static PathSegment * dev_paths = NULL;
@@ -100,6 +104,15 @@ void pathtraceInit(Scene *scene) {
     cudaMalloc(&dev_image, pixelcount * sizeof(glm::vec3));
     cudaMemset(dev_image, 0, pixelcount * sizeof(glm::vec3));
 
+    cudaMalloc(&dev_image_new, pixelcount * sizeof(glm::vec3));
+    cudaMemset(dev_image_new, 0, pixelcount * sizeof(glm::vec3));
+
+    cudaMalloc(&dev_image_old, pixelcount * sizeof(glm::vec3));
+    cudaMemset(dev_image_old, 0, pixelcount * sizeof(glm::vec3));
+
+    cudaMalloc(&dev_kernel, pixelcount * sizeof(glm::vec3));
+
+
   	cudaMalloc(&dev_paths, pixelcount * sizeof(PathSegment));
 
   	cudaMalloc(&dev_geoms, scene->geoms.size() * sizeof(Geom));
@@ -114,12 +127,28 @@ void pathtraceInit(Scene *scene) {
     cudaMalloc(&dev_gBuffer, pixelcount * sizeof(GBufferPixel));
 
     // TODO: initialize any extra device memeory you need
+    // reference www.eso.org/sci/software/esomidas//doc/user/98NOV/volb/node317.html
+    std::vector<float> kernelValueList = { 0.0039, 0.0156, 0.0234, 0.0156, 0.0039,
+                                           0.0156, 0.0625, 0.0937, 0.0625, 0.0156,
+                                           0.0234, 0.0937, 0.1406, 0.0937, 0.0234,
+                                           0.0156, 0.0625, 0.0937, 0.0625, 0.0156, 
+                                           0.0039, 0.0156, 0.0234, 0.0156, 0.0039};
+
+
+    for (int i = 0; i < kernelValueList.size(); i++) {
+        cudaMemcpy(dev_kernel + i, &kernelValueList[i], sizeof(float), cudaMemcpyHostToDevice);
+    }
+
 
     checkCUDAError("pathtraceInit");
 }
 
 void pathtraceFree() {
     cudaFree(dev_image);  // no-op if dev_image is null
+    cudaFree(dev_image_new);
+    cudaFree(dev_image_old);
+    cudaFree(dev_kernel);
+
   	cudaFree(dev_paths);
   	cudaFree(dev_geoms);
   	cudaFree(dev_materials);
@@ -282,6 +311,8 @@ __global__ void generateGBuffer (
   if (idx < num_paths)
   {
     gBuffer[idx].t = shadeableIntersections[idx].t;
+    gBuffer[idx].normal = shadeableIntersections[idx].surfaceNormal;
+    gBuffer[idx].position = getPointOnRay(pathSegments[idx].ray, shadeableIntersections[idx].t);
   }
 }
 
@@ -301,7 +332,66 @@ __global__ void finalGather(int nPaths, glm::vec3 * image, PathSegment * iterati
  * Wrapper for the __global__ call that sets up the kernel calls and does a ton
  * of memory management
  */
-void pathtrace(int frame, int iter) {
+
+__global__ void denoizeKernelFilter(glm::vec3* img_in, glm::vec3* img_out, GBufferPixel* gbuffer, float c_phi, float n_phi, float p_phi,
+Camera cam, float step, float* kernel, int iter) {
+
+    int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+    int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+
+    int org_idx = y * cam.resolution.x + x;
+
+    glm::vec3 cval = img_in[org_idx];
+    glm::vec3 nval = gbuffer[org_idx].normal;
+    glm::vec3 pval = gbuffer[org_idx].position;
+    glm::vec3 sum = glm::vec3(0);
+    step = pow(2, step);
+    float cum_w = 0.0;
+    for (int i = -2; i < 3; i++) {
+        for (int q = -2; q < 3; q++) {
+            int cur_x = x + q * step;
+            int cur_y = y + i * step;
+            //cur_x = glm::clamp(cur_x, 0, cam.resolution.x - 1);
+            //cur_y = glm::clamp(cur_y, 0, cam.resolution.y - 1);
+            if (cur_x > 0 && cur_x < cam.resolution.x - 1 && cur_y>0 && cur_y < cam.resolution.y - 1) {
+                int cur_idx = cur_y * cam.resolution.x + cur_x;
+
+                glm::vec3 ctemp = img_in[cur_idx];
+                glm::vec3 t = (cval - ctemp)/ float(iter);
+                
+                float dist2 = dot(t, t);
+
+              
+                float c_w = max(0.001f,min(exp(-(dist2) / c_phi), 1.0f));
+                
+                glm::vec3 ntemp = gbuffer[cur_idx].normal;
+                t = nval - ntemp;
+                dist2 = dot(t, t);
+                float n_w = min(exp(-(dist2) / n_phi), 1.0f);
+
+                glm::vec3 ptemp = gbuffer[cur_idx].position;
+                t = pval - ptemp;
+                dist2 = dot(t, t);
+                float p_w = min(exp(-(dist2) / p_phi), 1.0f);
+
+                float weight = c_w * n_w * p_w;
+                int kernel_idx = (i + 2) * 5 + (q + 2);
+                float new_float = kernel[kernel_idx];
+                sum += ctemp * weight * new_float;
+                cum_w += weight * new_float;
+            
+            }
+            
+
+        }
+    }
+    //img_out[org_idx] = gbuffer[org_idx].normal;
+    img_out[org_idx] = sum / cum_w;
+    //img_out[org_idx] = glm::vec3(1);
+}
+
+
+void pathtrace(int frame, int iter, int filter, float c_phi, float n_phi, float p_phi, bool ui_denoize) {
     const int traceDepth = hst_scene->state.traceDepth;
     const Camera &cam = hst_scene->state.camera;
     const int pixelcount = cam.resolution.x * cam.resolution.y;
@@ -356,13 +446,13 @@ void pathtrace(int frame, int iter) {
 	// --- PathSegment Tracing Stage ---
 	// Shoot ray into scene, bounce between objects, push shading chunks
 
-  // Empty gbuffer
-  cudaMemset(dev_gBuffer, 0, pixelcount * sizeof(GBufferPixel));
+   // Empty gbuffer
+   cudaMemset(dev_gBuffer, 0, pixelcount * sizeof(GBufferPixel));
 
 	// clean shading chunks
 	cudaMemset(dev_intersections, 0, pixelcount * sizeof(ShadeableIntersection));
 
-  bool iterationComplete = false;
+    bool iterationComplete = false;
 	while (!iterationComplete) {
 
 	// tracing
@@ -377,34 +467,67 @@ void pathtrace(int frame, int iter) {
 		);
 	checkCUDAError("trace one bounce");
 	cudaDeviceSynchronize();
-
+     
   if (depth == 0) {
     generateGBuffer<<<numblocksPathSegmentTracing, blockSize1d>>>(num_paths, dev_intersections, dev_paths, dev_gBuffer);
   }
 
 	depth++;
 
-  shadeSimpleMaterials<<<numblocksPathSegmentTracing, blockSize1d>>> (
+   shadeSimpleMaterials<<<numblocksPathSegmentTracing, blockSize1d>>> (
     iter,
     num_paths,
     dev_intersections,
     dev_paths,
     dev_materials
-  );
-  iterationComplete = depth == traceDepth;
+    );
+    iterationComplete = depth == traceDepth;
 	}
 
   // Assemble this iteration and apply it to the image
   dim3 numBlocksPixels = (pixelcount + blockSize1d - 1) / blockSize1d;
 	finalGather<<<numBlocksPixels, blockSize1d>>>(num_paths, dev_image, dev_paths);
 
+    if (ui_denoize) {
+        cudaMemcpy(dev_image_old,dev_image , pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToDevice);
+
+        const Camera& cam = hst_scene->state.camera;
+        const dim3 blockSize2d(8, 8);
+        const dim3 blocksPerGrid2d(
+            (cam.resolution.x + blockSize2d.x - 1) / blockSize2d.x,
+            (cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
+
+        for (int stepsize = 0; stepsize <ceil(log2(filter / 2)); stepsize++) {
+            //denoizeKernelFilter(glm::vec3 * img_in, glm::vec3 * img_out, GBufferPixel * gbuffer, float c_phi, float n_phi, float p_phi,
+                //Camera cam, int iter, float step, float* kernel) {
+
+            denoizeKernelFilter << <blocksPerGrid2d, blockSize2d >> > (dev_image_old, dev_image_new, dev_gBuffer, c_phi, n_phi, p_phi, cam, stepsize, dev_kernel,iter);
+            /*
+            if (stepsize != ceil(log2(filter / 2)) - 1) {
+            
+                cudaMemcpy(dev_image_old, dev_image_new, pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToDevice);
+            }*/
+            std::swap(dev_image_old, dev_image_new);
+
+        }
+
+        cudaMemcpy(hst_scene->state.image.data(), dev_image_new,
+            pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
+    
+    }
+    else {
+        cudaMemcpy(hst_scene->state.image.data(), dev_image,
+            pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
+    
+    }
+
+
     ///////////////////////////////////////////////////////////////////////////
 
     // CHECKITOUT: use dev_image as reference if you want to implement saving denoised images.
     // Otherwise, screenshots are also acceptable.
     // Retrieve image from GPU
-    cudaMemcpy(hst_scene->state.image.data(), dev_image,
-            pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
+    
 
     checkCUDAError("pathtrace");
 }
@@ -429,5 +552,5 @@ const Camera &cam = hst_scene->state.camera;
             (cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
 
     // Send results to OpenGL buffer for rendering
-    sendImageToPBO<<<blocksPerGrid2d, blockSize2d>>>(pbo, cam.resolution, iter, dev_image);
+    sendImageToPBO<<<blocksPerGrid2d, blockSize2d>>>(pbo, cam.resolution, iter, dev_image_new);
 }
