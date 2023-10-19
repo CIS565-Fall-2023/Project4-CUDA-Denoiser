@@ -58,7 +58,8 @@ FILE        cornell
 EYE         0.0 5 10.5
 LOOKAT      0 5 0
 UP          0 1 0
-
+FOCAL       0
+LENS_RADIUS 0
 
 // Ceiling light
 OBJECT 0
@@ -67,6 +68,7 @@ material 0
 TRANS       0 10 0
 ROTAT       0 0 0
 SCALE       10 .3 10
+LIGHTTYPE   0
 
 // Floor
 OBJECT 1

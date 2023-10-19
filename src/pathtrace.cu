@@ -79,6 +79,26 @@ struct compareByMaterialId {
 	}
 };
 
+__global__ void copyImage(glm::ivec2 resolution, int iter, glm::vec3* image, glm::vec3* denoisedImage) {
+	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+
+	if (x < resolution.x && y < resolution.y) {
+		int index = x + resolution.x * y;
+		denoisedImage[index] = image[index] / (float)iter;
+	}
+}
+
+__global__ void restoreImage(glm::ivec2 resolution, int iter, glm::vec3* denoisedImage) {
+	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+
+	if (x < resolution.x && y < resolution.y) {
+		int index = x + resolution.x * y;
+		denoisedImage[index] *= (float)iter;
+	}
+}
+
 //Kernel that writes the image to the OpenGL PBO directly.
 __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution,
 	int iter, glm::vec3* image) {
@@ -142,7 +162,10 @@ static Light* dev_lights = NULL;
 static Material* dev_materials = NULL;
 static PathSegment* dev_paths = NULL;
 static ShadeableIntersection* dev_intersections = NULL;
+
 static GBufferPixel* dev_gBuffer = NULL;
+static glm::vec3* dev_denoised_image = NULL;
+static glm::vec3* dev_denoised_image_next = NULL;
 
 #if FIRST_BOUNCE_CACHE
 static ShadeableIntersection* dev_first_bounce_cache = NULL;
@@ -219,6 +242,13 @@ void pathtraceInit(Scene* scene) {
 	}
 
 	cudaMalloc(&dev_gBuffer, pixelcount * sizeof(GBufferPixel));
+	cudaMemset(dev_gBuffer, 0, pixelcount * sizeof(GBufferPixel));
+
+	cudaMalloc(&dev_denoised_image, pixelcount * sizeof(glm::vec3));
+	cudaMemset(dev_denoised_image, 0, pixelcount * sizeof(glm::vec3));
+
+	cudaMalloc(&dev_denoised_image_next, pixelcount * sizeof(glm::vec3));
+	cudaMemset(dev_denoised_image_next, 0, pixelcount * sizeof(glm::vec3));
 	
 	checkCUDAError("pathtraceInit");
 }
@@ -251,6 +281,8 @@ void pathtraceFree() {
 	}
 
 	cudaFree(dev_gBuffer);
+	cudaFree(dev_denoised_image);
+	cudaFree(dev_denoised_image_next);
 
 	checkCUDAError("pathtraceFree");
 }
@@ -754,6 +786,49 @@ __global__ void finalGather(int nPaths, glm::vec3* image, PathSegment* iteration
 	}
 }
 
+__global__ void aTrousFilter(glm::ivec2 resolution, GBufferPixel* gbuffer, const glm::vec3* image, glm::vec3* nextImage,
+	float colorWeight, float normalWeight, float positionWeight, int step) {
+	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+
+	if (x < resolution.x && y < resolution.y) 
+	{
+		// 5 * 5 kernel, B3 spline interpolation
+		const float kernel[3] = {3.f / 8.f, 1.f / 4.f, 1.f / 16.f};
+		glm::vec3 colorSum(0.f);
+		float weightSum = 0.f;
+
+		int index = x + y * resolution.x;
+		GBufferPixel curPixel = gbuffer[index];
+		glm::vec3 color = image[index];
+		glm::vec3 normal = curPixel.normal;
+		glm::vec3 position = curPixel.position;
+
+		for (int i = -2; i <= 2; ++i) {
+			for (int j = -2; j <= 2; ++j) {
+				int xIndex = glm::clamp(x + i * step, 0, resolution.x - 1);
+				int yIndex = glm::clamp(y + j * step, 0, resolution.y - 1);
+				int curIndex = xIndex + yIndex * resolution.x;
+
+				// calculate weight - di
+				glm::vec3 colorDiff = color - image[curIndex];
+				glm::vec3 normalDiff = normal - gbuffer[curIndex].normal;
+				glm::vec3 positionDiff = position - gbuffer[curIndex].position;
+
+				float weight = min(exp(-dot(colorDiff, colorDiff) / colorWeight), 1.0f) *
+							   min(exp(-max(dot(normalDiff, normalDiff), 1.0f) / normalWeight), 1.0f) *
+					           min(exp(-dot(positionDiff, positionDiff) / positionWeight ), 1.0f);
+
+				float h = kernel[abs(i)] * kernel[abs(j)];
+				colorSum += h * weight * image[curIndex];
+				weightSum += h * weight;
+			}
+		}
+
+		nextImage[index] = colorSum / weightSum;
+	}
+}
+
 /**
  * Wrapper for the __global__ call that sets up the kernel calls and does a ton
  * of memory management
@@ -1011,4 +1086,46 @@ void showImage(uchar4* pbo, int iter) {
 
 	// Send results to OpenGL buffer for rendering
 	sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, iter, dev_image);
+}
+
+void showDenoisedImage(uchar4* pbo, int iter) {
+	const Camera& cam = hst_scene->state.camera;
+	const glm::ivec2 resolution = cam.resolution;
+	const dim3 blockSize2d(8, 8);
+	const dim3 blocksPerGrid2d(
+		(resolution.x + blockSize2d.x - 1) / blockSize2d.x,
+		(resolution.y + blockSize2d.y - 1) / blockSize2d.y);
+
+	// Send results to OpenGL buffer for rendering
+	sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, resolution, iter, dev_denoised_image);
+}
+
+void denoise(float colorWeight, float normalWeight, float positionWeight, float filterSize, int iter) {
+	const Camera& cam = hst_scene->state.camera;
+	const glm::ivec2 resolution = cam.resolution;
+	const int pixelcount = resolution.x * resolution.y;
+
+	const dim3 blockSize2d(32, 32);
+	const dim3 blocksPerGrid2d(
+		(resolution.x + blockSize2d.x - 1) / blockSize2d.x,
+		(resolution.y + blockSize2d.y - 1) / blockSize2d.y);
+
+	// divide by iteration
+	//cudaMemcpy(dev_denoised_image, dev_image, pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToDevice);
+	copyImage << <blocksPerGrid2d, blockSize2d >> > (resolution, iter, dev_image, dev_denoised_image);
+
+	// iteration determined by desired filter size
+	int iterCount = (int)(glm::log2((float)filterSize / 4.0f));
+	int step = 1;
+	// a-trous filter
+	for (int i = 0; i < iterCount; i++) {
+		aTrousFilter << <blocksPerGrid2d, blockSize2d >> > (resolution, dev_gBuffer, dev_denoised_image, dev_denoised_image_next,
+			colorWeight, normalWeight, positionWeight, step);
+
+		std::swap(dev_denoised_image, dev_denoised_image_next);
+		step <<= 1;
+	}
+
+	restoreImage<<<blocksPerGrid2d, blockSize2d >> > (resolution, iter, dev_denoised_image);
+	cudaMemcpy(hst_scene->state.image.data(), dev_denoised_image, pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
 }
