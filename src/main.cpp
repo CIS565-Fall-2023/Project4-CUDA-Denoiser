@@ -178,7 +178,7 @@ void runCuda() {
 
         // execute the kernel
         int frame = 0;
-        pathtrace(frame, iteration, ui_denoise);
+        pathtrace(frame, iteration, ui_denoise? ui_filterSize : 0);
     }
 
     if (ui_renderMode == RenderMode::FULL) {

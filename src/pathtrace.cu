@@ -546,7 +546,7 @@ __global__ void finalGather(int nPaths, int nIters, glm::vec3* image, PathSegmen
 	}
 }
 
-__global__ void denoise(const glm::vec3* readFrameBuffer, glm::vec3* writeFrameBuffer, glm::ivec2 resolution)
+__global__ void denoise(const glm::vec3* readFrameBuffer, glm::vec3* writeFrameBuffer, glm::ivec2 resolution, int stepWidth)
 {
 	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
 	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
@@ -561,10 +561,10 @@ __global__ void denoise(const glm::vec3* readFrameBuffer, glm::vec3* writeFrameB
 
 	for (int i = 0; i < 25; i++)
 	{
-		int readPxX = (blockIdx.x * blockDim.x) + threadIdx.x + dev_offsets[i * 2];
+		int readPxX = x + dev_offsets[i * 2] * 1;
 		readPxX = glm::clamp(readPxX, 0, resolution.x - 1);
 
-		int readPxY = (blockIdx.y * blockDim.y) + threadIdx.y + dev_offsets[i * 2 + 1];
+		int readPxY = y + dev_offsets[i * 2 + 1] * 1;
 		readPxY = glm::clamp(readPxY, 0, resolution.x - 1);
 
 		int readPxIdx = readPxX * resolution.x + readPxY;
@@ -576,7 +576,7 @@ __global__ void denoise(const glm::vec3* readFrameBuffer, glm::vec3* writeFrameB
  * Wrapper for the __global__ call that sets up the kernel calls and does a ton
  * of memory management
  */
-void pathtrace(int frame, int iter, bool shouldDenoise) {
+void pathtrace(int frame, int iter, int denoiseFilterSize) {
     const int traceDepth = hst_scene->state.traceDepth;
     const Camera &cam = hst_scene->state.camera;
     const int pixelcount = cam.resolution.x * cam.resolution.y;
@@ -735,10 +735,19 @@ void pathtrace(int frame, int iter, bool shouldDenoise) {
 	dim3 numBlocksPixels = (pixelcount + blockSize1d - 1) / blockSize1d;
 	finalGather << <numBlocksPixels, blockSize1d >> > (pixelcount, iter, dev_image, dev_paths);
 
-	if (shouldDenoise)
+	if (denoiseFilterSize > 0)
 	{
-		std::swap(dev_imageRead, dev_image);
-		denoise<<<blocksPerGrid2d, blockSize2d>>>(dev_imageRead, dev_image, hst_scene->state.camera.resolution);
+		for (int i = 0; i < denoiseFilterSize; i++)
+		{
+			int stepWidth = 1 << i;
+			std::swap(dev_imageRead, dev_image);
+			denoise<<<blocksPerGrid2d, blockSize2d>>>(dev_imageRead, dev_image, hst_scene->state.camera.resolution, stepwidth);
+		}
+
+		if (denoiseFilterSize & 1 == 0)	// fast way to check denoiseFilterSize%2 == 0
+		{
+			std::swap(dev_imageRead, dev_image);
+		}
 	}
 	///////////////////////////////////////////////////////////////////////////
 
