@@ -70,7 +70,66 @@ __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution,
 }
 
 
-__global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* gBuffer) {
+__global__ void denoise(glm::ivec2 resolution,
+	float colWeight, float norWeight, float posWeight, int step,
+	int iter, glm::vec3* image, GBufferPixel* gBuffer) {
+	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+
+	if (x < resolution.x && y < resolution.y) {
+		int index = x + (y * resolution.x);
+
+		glm::vec3 sum = glm::vec3(0.);
+		glm::vec3 col = image[index] / (float)iter;
+		glm::vec3 nor = gBuffer[index].normal;
+		glm::vec3 pos = gBuffer[index].pos;
+
+		//  0.0625, 0.25, 0.375, 0.25, 0.0625
+		const float kernel[25] = {
+			0.00391f, 0.01563f, 0.02344f, 0.01563f, 0.00391f,
+			0.01563f, 0.0625f, 0.09375f, 0.0625f, 0.01563f,
+			0.02344f, 0.09375f, 0.14063f,  0.09375f, 0.02344f,
+			0.01563f, 0.0625f, 0.09375f, 0.0625f, 0.01563f,
+			0.00391f, 0.01563f, 0.02344f, 0.01563f, 0.00391f
+		};
+		
+		float sum_w = 0.;
+		for (int dx = -2; dx <= 2; dx++) {
+			for (int dy = -2; dy <= 2; dy++) {
+				int nx = x + dx * step;
+				int ny = y + dy * step;
+				if (nx >= 0 && nx < resolution.x && ny >= 0 && ny < resolution.y) {
+					int tmpIndex = nx + (ny * resolution.x);
+					
+					glm::vec3 tmpCol = image[tmpIndex] / (float)iter;
+					glm::vec3 t = col - tmpCol;
+					float dist2 = glm::dot(t, t);
+					float cw = min(exp(-(dist2) / colWeight), 1.0f);
+
+					glm::vec3 tmpNor = gBuffer[tmpIndex].normal;
+					t = nor - tmpNor;
+					dist2 = glm::dot(t, t);
+					float nw = min(exp(-(dist2) / norWeight), 1.0f);
+
+					glm::vec3 tmpPos = gBuffer[tmpIndex].pos;
+					t = pos - tmpPos;
+					dist2 = glm::dot(t, t);
+					float pw = min(exp(-(dist2) / posWeight), 1.0f);
+
+					float w = cw * nw * pw;
+					sum += tmpCol * w * kernel[dx + 2 + (dy + 2) * 5];
+					sum_w += w * kernel[dx + 2 + (dy + 2) * 5];
+				}
+			}
+		}
+		col = sum / sum_w;
+
+		image[index] = col * (float)iter;
+	}
+}
+
+
+__global__ void gbufferDepthToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* gBuffer) {
 	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
 	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
 
@@ -82,6 +141,38 @@ __global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* g
 		pbo[index].x = timeToIntersect;
 		pbo[index].y = timeToIntersect;
 		pbo[index].z = timeToIntersect;
+	}
+}
+
+
+__global__ void gbufferPosToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* gBuffer) {
+	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+
+	if (x < resolution.x && y < resolution.y) {
+		int index = x + (y * resolution.x);
+		glm::ivec3 p = glm::clamp((glm::ivec3)(gBuffer[index].pos / 10.0f * 256.0f), glm::ivec3(0), glm::ivec3(255));
+
+		pbo[index].w = 0;
+		pbo[index].x = p.x;
+		pbo[index].y = p.y;
+		pbo[index].z = p.z;
+	}
+}
+
+
+__global__ void gbufferNormalToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* gBuffer) {
+	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+
+	if (x < resolution.x && y < resolution.y) {
+		int index = x + (y * resolution.x);
+		glm::vec3 nor = (gBuffer[index].normal * 0.5f + glm::vec3(0.5f)) * 256.0f;
+
+		pbo[index].w = 0;
+		pbo[index].x = nor.x;
+		pbo[index].y = nor.y;
+		pbo[index].z = nor.z;
 	}
 }
 
@@ -596,6 +687,8 @@ __global__ void generateGBuffer(
 	if (idx < num_paths)
 	{
 		gBuffer[idx].t = shadeableIntersections[idx].t;
+		gBuffer[idx].pos = max(shadeableIntersections[idx].t, 0.0f) * glm::normalize(pathSegments[idx].ray.direction) + pathSegments[idx].ray.origin;
+		gBuffer[idx].normal = shadeableIntersections[idx].surfaceNormal;
 	}
 }
 
@@ -867,11 +960,6 @@ void pathtrace(int frame, int iter) {
 
 	/////////////////////////////////////////////////////////////////////////////
 
-	//// Send results to OpenGL buffer for rendering
-	//sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, iter, dev_image);
-
-	//checkCUDAError("pathtrace sendImageToPBO");
-
 	// Retrieve image from GPU
 	cudaMemcpy(hst_scene->state.image.data(), dev_image,
 		pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
@@ -880,16 +968,40 @@ void pathtrace(int frame, int iter) {
 }
 
 // CHECKITOUT: this kernel "post-processes" the gbuffer/gbuffers into something that you can visualize for debugging.
-void showGBuffer(uchar4* pbo) {
+void showGBufferDepth(uchar4* pbo) {
 	const Camera& cam = hst_scene->state.camera;
 	const dim3 blockSize2d(8, 8);
 	const dim3 blocksPerGrid2d(
 		(cam.resolution.x + blockSize2d.x - 1) / blockSize2d.x,
 		(cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
 
-	std::cout << "showGBuffer" << std::endl;
+	// std::cout << "showGBufferDepth" << std::endl;
 	// CHECKITOUT: process the gbuffer results and send them to OpenGL buffer for visualization
-	gbufferToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, dev_gBuffer);
+	gbufferDepthToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, dev_gBuffer);
+}
+
+void showGBufferPos(uchar4* pbo) {
+	const Camera& cam = hst_scene->state.camera;
+	const dim3 blockSize2d(8, 8);
+	const dim3 blocksPerGrid2d(
+		(cam.resolution.x + blockSize2d.x - 1) / blockSize2d.x,
+		(cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
+
+	// std::cout << "showGBufferNormal" << std::endl;
+	// CHECKITOUT: process the gbuffer results and send them to OpenGL buffer for visualization
+	gbufferPosToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, dev_gBuffer);
+}
+
+void showGBufferNormal(uchar4* pbo) {
+	const Camera& cam = hst_scene->state.camera;
+	const dim3 blockSize2d(8, 8);
+	const dim3 blocksPerGrid2d(
+		(cam.resolution.x + blockSize2d.x - 1) / blockSize2d.x,
+		(cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
+
+	// std::cout << "showGBufferNormal" << std::endl;
+	// CHECKITOUT: process the gbuffer results and send them to OpenGL buffer for visualization
+	gbufferNormalToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, dev_gBuffer);
 }
 
 void showImage(uchar4* pbo, int iter) {
@@ -898,6 +1010,25 @@ void showImage(uchar4* pbo, int iter) {
 	const dim3 blocksPerGrid2d(
 		(cam.resolution.x + blockSize2d.x - 1) / blockSize2d.x,
 		(cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
+
+	// Send results to OpenGL buffer for rendering
+	sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, iter, dev_image);
+}
+
+void showDenoisedImage(uchar4* pbo, int iter, float colWeight, float norWeight, float posWeight, int filterSize) {
+	const Camera& cam = hst_scene->state.camera;
+	const dim3 blockSize2d(8, 8);
+	const dim3 blocksPerGrid2d(
+		(cam.resolution.x + blockSize2d.x - 1) / blockSize2d.x,
+		(cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
+
+	for (int i = 0; (1 << i) <= filterSize; i++) {
+		denoise << <blocksPerGrid2d, blockSize2d >> > (cam.resolution,
+			colWeight, norWeight, posWeight, 1 << i,
+			iter, dev_image, dev_gBuffer);
+	}
+	
+	
 
 	// Send results to OpenGL buffer for rendering
 	sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, iter, dev_image);

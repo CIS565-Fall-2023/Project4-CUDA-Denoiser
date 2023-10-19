@@ -215,13 +215,15 @@ void drawGui(int windowWidth, int windowHeight) {
 	ImGui::Checkbox("Denoise", &ui_denoise);
 
 	ImGui::SliderInt("Filter Size", &ui_filterSize, 0, 100);
-	ImGui::SliderFloat("Color Weight", &ui_colorWeight, 0.0f, 10.0f);
-	ImGui::SliderFloat("Normal Weight", &ui_normalWeight, 0.0f, 10.0f);
-	ImGui::SliderFloat("Position Weight", &ui_positionWeight, 0.0f, 10.0f);
+	ImGui::SliderFloat("Color Weight", &ui_colorWeight, 0.0f, 1.0f);
+	ImGui::SliderFloat("Normal Weight", &ui_normalWeight, 0.0f, 1.0f);
+	ImGui::SliderFloat("Position Weight", &ui_positionWeight, 0.0f, 1.0f);
 
 	ImGui::Separator();
 
-	ImGui::Checkbox("Show GBuffer", &ui_showGbuffer);
+	ImGui::Checkbox("Show depth", &ui_showDepth);
+	ImGui::Checkbox("Show position", &ui_showPos);
+	ImGui::Checkbox("Show normal", &ui_showNormal);
 
 	ImGui::Separator();
 

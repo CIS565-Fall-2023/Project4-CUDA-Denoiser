@@ -34,7 +34,9 @@ extern int height;
 
 extern int ui_iterations;
 extern int startupIterations;
-extern bool ui_showGbuffer;
+extern bool ui_showDepth;
+extern bool ui_showNormal;
+extern bool ui_showPos;
 extern bool ui_denoise;
 extern int ui_filterSize;
 extern float ui_colorWeight;

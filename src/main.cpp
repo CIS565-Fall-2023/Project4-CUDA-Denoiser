@@ -22,7 +22,9 @@ static double lastY;
 int ui_iterations = 0;
 int startupIterations = 0;
 int lastLoopIterations = 0;
-bool ui_showGbuffer = false;
+bool ui_showDepth = false;
+bool ui_showPos = false;
+bool ui_showNormal = false;
 bool ui_denoise = false;
 int ui_filterSize = 80;
 float ui_colorWeight = 0.45f;
@@ -30,7 +32,15 @@ float ui_normalWeight = 0.35f;
 float ui_positionWeight = 0.2f;
 bool ui_saveAndExit = false;
 
+bool img_denoised = false;
+int prev_ui_iterations = 0;
+int prev_ui_filterSize = 80;
+float prev_ui_colorWeight = 0.45f;
+float prev_ui_normalWeight = 0.35f;
+float prev_ui_positionWeight = 0.2f;
+
 static bool camchanged = true;
+static bool denoiseChanged = false;
 static float dtheta = 0, dphi = 0;
 static glm::vec3 cammove;
 
@@ -154,6 +164,27 @@ void runCuda() {
 		camchanged = false;
 	}
 
+	if (!denoiseChanged && ui_denoise) {
+		iteration = 0;
+		denoiseChanged = true;
+		img_denoised = false;
+	}
+	if (!ui_denoise && denoiseChanged) {
+		denoiseChanged = false;
+		iteration = 0;
+	}
+	if (prev_ui_iterations != ui_iterations || prev_ui_filterSize != ui_filterSize || prev_ui_colorWeight != ui_colorWeight || prev_ui_normalWeight != ui_normalWeight || prev_ui_positionWeight != ui_positionWeight) {
+		if (ui_denoise) {
+			iteration = 0;
+		}
+		img_denoised = false;
+		prev_ui_iterations = ui_iterations;
+		prev_ui_filterSize = ui_filterSize;
+		prev_ui_colorWeight = ui_colorWeight;
+		prev_ui_normalWeight = ui_normalWeight;
+		prev_ui_positionWeight = ui_positionWeight;
+	}
+
 	// Map OpenGL buffer object for writing from CUDA on a single GPU
 	// No data is moved (Win & Linux). When mapped to CUDA, OpenGL should not use this buffer
 
@@ -171,10 +202,22 @@ void runCuda() {
 		// execute the kernel
 		int frame = 0;
 		pathtrace(frame, iteration);
+
+		
 	}
 
-	if (ui_showGbuffer) {
-		showGBuffer(pbo_dptr);
+	if (ui_showDepth) {
+		showGBufferDepth(pbo_dptr);
+	}
+	else if (ui_showPos) {
+		showGBufferPos(pbo_dptr);
+	}
+	else if (ui_showNormal) {
+		showGBufferNormal(pbo_dptr);
+	}
+	else if (ui_denoise && iteration == ui_iterations && !img_denoised) {
+		showDenoisedImage(pbo_dptr, iteration, ui_colorWeight, ui_normalWeight, ui_positionWeight, ui_filterSize);
+		img_denoised = true;
 	}
 	else {
 		showImage(pbo_dptr, iteration);
