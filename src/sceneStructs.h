@@ -7,8 +7,8 @@
 
 #define BACKGROUND_COLOR (glm::vec3(0.0f))
 
-#define GBUFFER_Z 1
-#define GBUFFER_OCT 0
+#define GBUFFER_Z 0
+#define GBUFFER_OCT 1
 
 enum GeomType {
     SPHERE,
@@ -203,7 +203,11 @@ struct KDAccelNode{
 
 struct GBufferPixel {
     //float t;
+#if GBUFFER_OCT
+    glm::vec2 oct_normal;
+#else
     glm::vec3 normal;
+#endif
 #if GBUFFER_Z
     float z; // for z depth
 #else

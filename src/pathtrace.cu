@@ -17,8 +17,8 @@
 
 #define ERRORCHECK 0
 
-#define DISPLAY_GBUFFER_NORMAL 0
-#define DISPLAY_GBUFFER_POSITION 1
+#define DISPLAY_GBUFFER_NORMAL 1
+#define DISPLAY_GBUFFER_POSITION 0
 #define DISPLAY_GBUFFER_DUMMY 0
 
 #define SORT_MATERIALS 0
@@ -113,6 +113,17 @@ __host__ __device__ glm::vec3 restoreZdepth(float z, int x, int y, Camera cam) {
 	return getPointOnRay(ray, z);
 }
 
+__host__ __device__ glm::vec3 decodeOct(glm::vec2 oct) {
+	glm::vec3 v(oct.x, oct.y, 1.0 - abs(oct.x) - abs(oct.y));
+	if (v.z < 0) {
+		glm::vec2 xy = (1.0f - glm::vec2(v.y, v.x)) * 
+			glm::vec2((v.x >= 0.0) ? +1.0 : -1.0, (v.y >= 0.0) ? +1.0 : -1.0);
+		v.x = xy.x;
+		v.y = xy.y;
+	}
+	return normalize(v);
+}
+
 //Kernel that writes the image to the OpenGL PBO directly.
 __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution,
 	int iter, glm::vec3* image) {
@@ -152,8 +163,11 @@ __global__ void gbufferToPBO(uchar4* pbo, Camera cam, GBufferPixel* gBuffer) {
 		//pbo[index].z = timeToIntersect;
 #elif DISPLAY_GBUFFER_NORMAL
 		// display normal
-		glm::vec3 display_nor = abs(gBuffer[index].normal) * 255.0f;
-
+		#if GBUFFER_OCT
+			glm::vec3 display_nor = abs(decodeOct(gBuffer[index].oct_normal)) * 255.0f;
+		#else
+			glm::vec3 display_nor = abs(gBuffer[index].normal) * 255.0f;
+		#endif
 		pbo[index].x = display_nor.x;
 		pbo[index].y = display_nor.y;
 		pbo[index].z = display_nor.z;
@@ -788,7 +802,15 @@ __global__ void generateGBuffer(
 	{
 		ShadeableIntersection curIsect = shadeableIntersections[idx];
 		//gBuffer[idx].t = curIsect.t;
+#if GBUFFER_OCT
+		// encode
+		glm::vec3 nor = curIsect.surfaceNormal;
+		glm::vec2 p = glm::vec2(nor.x, nor.y) * (1.0f / (abs(nor.x) + abs(nor.y) + abs(nor.z)));
+		gBuffer[idx].oct_normal = (nor.z <= 0.0) ? 
+			((1.0f - abs(glm::vec2(p.y, p.x))) * glm::vec2(p.x >= 0 ? 1.f : -1.f, p.y >= 0 ? 1.f : -1.f)) : p;
+#else
 		gBuffer[idx].normal = curIsect.surfaceNormal;
+#endif
 #if GBUFFER_Z
 		gBuffer[idx].z = curIsect.t;
 #else
@@ -826,7 +848,12 @@ __global__ void aTrousFilter(const Camera cam, GBufferPixel* gbuffer, const glm:
 		int index = x + y * resolution.x;
 		GBufferPixel curPixel = gbuffer[index];
 		glm::vec3 color = image[index];
+
+#if GBUFFER_OCT
+		glm::vec3 normal = decodeOct(curPixel.oct_normal);
+#else
 		glm::vec3 normal = curPixel.normal;
+#endif
 
 #if GBUFFER_Z
 		const glm::vec3 position = restoreZdepth(curPixel.z, x, y, cam);
@@ -842,7 +869,11 @@ __global__ void aTrousFilter(const Camera cam, GBufferPixel* gbuffer, const glm:
 
 				// calculate weight - di
 				glm::vec3 colorDiff = color - image[curIndex];
+#if GBUFFER_OCT
+				glm::vec3 normalDiff = normal - decodeOct(gbuffer[curIndex].oct_normal);
+#else
 				glm::vec3 normalDiff = normal - gbuffer[curIndex].normal;
+#endif	
 #if GBUFFER_Z
 				glm::vec3 positionDiff = position - restoreZdepth(gbuffer[curIndex].z, xIndex, y, cam);
 #else
