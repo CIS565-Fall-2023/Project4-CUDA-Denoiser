@@ -1,6 +1,9 @@
 #include "main.h"
 #include "preview.h"
 #include <cstring>
+#include "../stream_compaction/common.h"
+
+#define PERFORMANCE_MEASURE 1
 
 static std::string startTimeString;
 
@@ -41,6 +44,17 @@ int iteration;
 
 int width;
 int height;
+
+#if PERFORMANCE_MEASURE
+float total_denoise_time = 0.0f;
+int denoise_iter = 0;
+using StreamCompaction::Common::PerformanceTimer;
+PerformanceTimer& timer()
+{
+	static PerformanceTimer timer;
+	return timer;
+}
+#endif
 
 //-------------------------------
 //-------------MAIN--------------
@@ -174,7 +188,15 @@ void runCuda() {
 	}
 	else {
 		if (ui_denoise) {
+#if PERFORMANCE_MEASURE
+			timer().startCpuTimer();
+#endif
 			denoise(ui_colorWeight, ui_normalWeight, ui_positionWeight, ui_filterSize, iteration);
+#if PERFORMANCE_MEASURE
+			timer().endCpuTimer();
+			total_denoise_time += timer().getCpuElapsedTimeForPreviousOperation();
+			++denoise_iter;
+#endif
 			showDenoisedImage(pbo_dptr, iteration);
 		} else {
 			showImage(pbo_dptr, iteration);
@@ -185,6 +207,9 @@ void runCuda() {
 	cudaGLUnmapBufferObject(pbo);
 
 	if (ui_saveAndExit) {
+#if PERFORMANCE_MEASURE
+		cout << "Avg denoise time: " << total_denoise_time / (float)denoise_iter << "ms" << endl;
+#endif
 		saveImage();
 		pathtraceFree();
 		cudaDeviceReset();

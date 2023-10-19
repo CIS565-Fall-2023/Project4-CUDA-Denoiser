@@ -33,7 +33,7 @@
 
 #define SUB_SCATTERING 0
 
-#define USE_KD_TREE 0
+#define USE_KD_TREE 1
 
 #define FILENAME (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 #define checkCUDAError(msg) checkCUDAErrorFn(msg, FILENAME, __LINE__)
