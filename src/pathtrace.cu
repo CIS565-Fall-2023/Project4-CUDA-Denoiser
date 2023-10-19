@@ -18,8 +18,8 @@
 #define ERRORCHECK 0
 
 #define DISPLAY_GBUFFER_NORMAL 0
-#define DISPLAY_GBUFFER_POSITION 0
-#define DISPLAY_GBUFFER_DUMMY 1
+#define DISPLAY_GBUFFER_POSITION 1
+#define DISPLAY_GBUFFER_DUMMY 0
 
 #define SORT_MATERIALS 0
 #define FIRST_BOUNCE_CACHE 0
@@ -99,6 +99,20 @@ __global__ void restoreImage(glm::ivec2 resolution, int iter, glm::vec3* denoise
 	}
 }
 
+__host__ __device__ glm::vec3 restoreZdepth(float z, int x, int y, Camera cam) {
+	if (z < 0) { 
+		return glm::vec3(0.f); 
+	}
+	Ray ray;
+	ray.direction = glm::normalize(cam.view
+		- cam.right * cam.pixelLength.x * ((float)x - (float)cam.resolution.x * 0.5f)
+		- cam.up * cam.pixelLength.y * ((float)y - (float)cam.resolution.y * 0.5f)
+	);
+	ray.origin = cam.position;
+
+	return getPointOnRay(ray, z);
+}
+
 //Kernel that writes the image to the OpenGL PBO directly.
 __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution,
 	int iter, glm::vec3* image) {
@@ -122,19 +136,20 @@ __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution,
 	}
 }
 
-__global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* gBuffer) {
+__global__ void gbufferToPBO(uchar4* pbo, Camera cam, GBufferPixel* gBuffer) {
 	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
 	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+	glm::ivec2 resolution = cam.resolution;
 
 	if (x < resolution.x && y < resolution.y) {
 		int index = x + (y * resolution.x);
 
 		pbo[index].w = 0;
 #if DISPLAY_GBUFFER_DUMMY
-		float timeToIntersect = gBuffer[index].t * 255.0;
-		pbo[index].x = timeToIntersect;
-		pbo[index].y = timeToIntersect;
-		pbo[index].z = timeToIntersect;
+		//float timeToIntersect = gBuffer[index].t * 255.0;
+		//pbo[index].x = timeToIntersect;
+		//pbo[index].y = timeToIntersect;
+		//pbo[index].z = timeToIntersect;
 #elif DISPLAY_GBUFFER_NORMAL
 		// display normal
 		glm::vec3 display_nor = abs(gBuffer[index].normal) * 255.0f;
@@ -144,7 +159,11 @@ __global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* g
 		pbo[index].z = display_nor.z;
 #elif DISPLAY_GBUFFER_POSITION
 		// display position
-		glm::vec3 display_pos = abs(gBuffer[index].position) * 255.0f / 10.0f;
+		#if GBUFFER_Z
+			glm::vec3 display_pos = abs(restoreZdepth(gBuffer[index].z, x, y, cam)) * 255.0f / 10.0f;
+		#else
+			glm::vec3 display_pos = abs(gBuffer[index].position) * 255.0f / 10.0f;
+		#endif
 
 		// different scale for cornnel box scene
 		pbo[index].x = display_pos.x;
@@ -768,9 +787,13 @@ __global__ void generateGBuffer(
 	if (idx < num_paths)
 	{
 		ShadeableIntersection curIsect = shadeableIntersections[idx];
-		gBuffer[idx].t = curIsect.t;
+		//gBuffer[idx].t = curIsect.t;
 		gBuffer[idx].normal = curIsect.surfaceNormal;
+#if GBUFFER_Z
+		gBuffer[idx].z = curIsect.t;
+#else
 		gBuffer[idx].position = curIsect.t < 0.0f ? glm::vec3(0.f) : getPointOnRay(pathSegments[idx].ray, curIsect.t);
+#endif
 	}
 }
 
@@ -786,10 +809,12 @@ __global__ void finalGather(int nPaths, glm::vec3* image, PathSegment* iteration
 	}
 }
 
-__global__ void aTrousFilter(glm::ivec2 resolution, GBufferPixel* gbuffer, const glm::vec3* image, glm::vec3* nextImage,
+__global__ void aTrousFilter(const Camera cam, GBufferPixel* gbuffer, const glm::vec3* image, glm::vec3* nextImage,
 	float colorWeight, float normalWeight, float positionWeight, int step) {
 	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
 	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+
+	glm::ivec2 resolution = cam.resolution;
 
 	if (x < resolution.x && y < resolution.y) 
 	{
@@ -802,7 +827,12 @@ __global__ void aTrousFilter(glm::ivec2 resolution, GBufferPixel* gbuffer, const
 		GBufferPixel curPixel = gbuffer[index];
 		glm::vec3 color = image[index];
 		glm::vec3 normal = curPixel.normal;
-		glm::vec3 position = curPixel.position;
+
+#if GBUFFER_Z
+		const glm::vec3 position = restoreZdepth(curPixel.z, x, y, cam);
+#else
+		const glm::vec3 position = curPixel.position;
+#endif
 
 		for (int i = -2; i <= 2; ++i) {
 			for (int j = -2; j <= 2; ++j) {
@@ -813,11 +843,14 @@ __global__ void aTrousFilter(glm::ivec2 resolution, GBufferPixel* gbuffer, const
 				// calculate weight - di
 				glm::vec3 colorDiff = color - image[curIndex];
 				glm::vec3 normalDiff = normal - gbuffer[curIndex].normal;
+#if GBUFFER_Z
+				glm::vec3 positionDiff = position - restoreZdepth(gbuffer[curIndex].z, xIndex, y, cam);
+#else
 				glm::vec3 positionDiff = position - gbuffer[curIndex].position;
-
+#endif
 				float weight = min(exp(-dot(colorDiff, colorDiff) / colorWeight), 1.0f) *
-							   min(exp(-max(dot(normalDiff, normalDiff), 1.0f) / normalWeight), 1.0f) *
-					           min(exp(-dot(positionDiff, positionDiff) / positionWeight ), 1.0f);
+							   min(exp(-max(dot(normalDiff, normalDiff), 0.0f) / normalWeight), 1.0f) *
+					           min(exp(-dot(positionDiff, positionDiff) / positionWeight), 1.0f);
 
 				float h = kernel[abs(i)] * kernel[abs(j)];
 				colorSum += h * weight * image[curIndex];
@@ -1074,7 +1107,7 @@ void showGBuffer(uchar4* pbo) {
 		(cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
 
 	// CHECKITOUT: process the gbuffer results and send them to OpenGL buffer for visualization
-	gbufferToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, dev_gBuffer);
+	gbufferToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, hst_scene->state.camera, dev_gBuffer);
 }
 
 void showImage(uchar4* pbo, int iter) {
@@ -1101,8 +1134,7 @@ void showDenoisedImage(uchar4* pbo, int iter) {
 }
 
 void denoise(float colorWeight, float normalWeight, float positionWeight, float filterSize, int iter) {
-	const Camera& cam = hst_scene->state.camera;
-	const glm::ivec2 resolution = cam.resolution;
+	const glm::ivec2 resolution = hst_scene->state.camera.resolution;
 	const int pixelcount = resolution.x * resolution.y;
 
 	const dim3 blockSize2d(32, 32);
@@ -1119,7 +1151,7 @@ void denoise(float colorWeight, float normalWeight, float positionWeight, float 
 	int step = 1;
 	// a-trous filter
 	for (int i = 0; i < iterCount; i++) {
-		aTrousFilter << <blocksPerGrid2d, blockSize2d >> > (resolution, dev_gBuffer, dev_denoised_image, dev_denoised_image_next,
+		aTrousFilter << <blocksPerGrid2d, blockSize2d >> > (hst_scene->state.camera, dev_gBuffer, dev_denoised_image, dev_denoised_image_next,
 			colorWeight, normalWeight, positionWeight, step);
 
 		std::swap(dev_denoised_image, dev_denoised_image_next);
