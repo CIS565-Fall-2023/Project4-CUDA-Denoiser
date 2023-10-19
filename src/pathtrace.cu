@@ -741,7 +741,7 @@ void pathtrace(int frame, int iter, int denoiseFilterSize) {
 		{
 			int stepWidth = 1 << i;
 			std::swap(dev_imageRead, dev_image);
-			denoise<<<blocksPerGrid2d, blockSize2d>>>(dev_imageRead, dev_image, hst_scene->state.camera.resolution, stepwidth);
+			denoise<<<blocksPerGrid2d, blockSize2d>>>(dev_imageRead, dev_image, hst_scene->state.camera.resolution, stepWidth);
 		}
 
 		if (denoiseFilterSize & 1 == 0)	// fast way to check denoiseFilterSize%2 == 0
