@@ -6,6 +6,7 @@
 #include <thrust/remove.h>
 #include <thrust/device_vector.h>
 #include <numeric>
+#include <cuda_runtime.h>
 
 #include "sceneStructs.h"
 #include "scene.h"
@@ -39,6 +40,14 @@ void checkCUDAErrorFn(const char* msg, const char* file, int line) {
 	exit(EXIT_FAILURE);
 #endif
 }
+
+
+#ifdef RECORD_PATH_TRACE_AND_DENOISE_TIME
+static cudaEvent_t event_start = nullptr;
+static cudaEvent_t event_end = nullptr;
+float elapsed_time_gpu_ms = 0.f;
+#endif
+
 
 __host__ __device__
 thrust::default_random_engine makeSeededRandomEngine(int iter, int index, int depth) {
@@ -298,6 +307,9 @@ void InitDataContainer(GuiDataContainer* imGuiData)
 }
 
 void pathtraceInit(Scene* scene) {
+
+	checkCUDAError("before pathtraceInit");
+
 	hst_scene = scene;
 
 	const Camera& cam = hst_scene->state.camera;
@@ -339,7 +351,16 @@ void pathtraceInit(Scene* scene) {
 
 	cudaMalloc(&dev_gBuffer, pixelcount * sizeof(GBufferPixel));
 
-	checkCUDAError("pathtraceInit");	
+	checkCUDAError("pathtraceInit");
+
+
+#ifdef RECORD_PATH_TRACE_AND_DENOISE_TIME
+	cudaEventCreate(&event_start);
+	cudaEventCreate(&event_end);
+
+	checkCUDAError("pathtraceInit, cudaEventCreate");
+	cudaEventRecord(event_start);
+#endif
 }
 
 void pathtraceFree() {
@@ -366,8 +387,14 @@ void pathtraceFree() {
 	cudaFree(dev_gBuffer);
 
 	checkCUDAError("pathtraceFree");
-}
 
+#ifdef RECORD_PATH_TRACE_AND_DENOISE_TIME
+	if (event_start != nullptr) {
+		cudaEventDestroy(event_start);
+		cudaEventDestroy(event_end);
+	}
+#endif
+}
 
 
 /**
@@ -859,6 +886,10 @@ void pathtrace(int frame, int iter) {
 	int depth = 0;
 	int num_paths = pixelcount;
 
+#ifdef RECORD_PATH_TRACE_AND_DENOISE_TIME
+	cudaEventRecord(event_start);
+#endif
+
 
 #ifdef CACHE_FIRST_BOUNCE
 	if (iter == 1) {
@@ -1039,6 +1070,13 @@ void pathtrace(int frame, int iter) {
 
 	/////////////////////////////////////////////////////////////////////////////
 
+#ifdef RECORD_PATH_TRACE_AND_DENOISE_TIME
+	cudaEventRecord(event_end);
+	cudaEventSynchronize(event_end);
+	cudaEventElapsedTime(&elapsed_time_gpu_ms, event_start, event_end);
+	cout << "iter-" << iter << ", pathTrace time = " << elapsed_time_gpu_ms << std::endl;
+#endif
+
 	retrieveImage();
 }
 
@@ -1107,11 +1145,22 @@ void showDenoisedImage(uchar4* pbo, int iter, float colWeight, float norWeight, 
 		(cam.resolution.x + blockSize2d.x - 1) / blockSize2d.x,
 		(cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
 
+#ifdef RECORD_PATH_TRACE_AND_DENOISE_TIME
+	cudaEventRecord(event_start);
+#endif
+
 	for (int i = 0; (1 << i) <= filterSize; i++) {
 		denoise << <blocksPerGrid2d, blockSize2d >> > (cam.resolution, cam,
 			colWeight, norWeight, posWeight, 1 << i,
 			iter, dev_image, dev_gBuffer);
 	}
+
+#ifdef RECORD_PATH_TRACE_AND_DENOISE_TIME
+	cudaEventRecord(event_end);
+	cudaEventSynchronize(event_end);
+	cudaEventElapsedTime(&elapsed_time_gpu_ms, event_start, event_end);
+	cout << "denoise time = " << elapsed_time_gpu_ms << std::endl;
+#endif
 	
 	// Send results to OpenGL buffer for rendering
 	sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, iter, dev_image);

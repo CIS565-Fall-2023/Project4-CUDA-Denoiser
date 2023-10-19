@@ -58,6 +58,8 @@ int iteration;
 int width;
 int height;
 
+
+
 //-------------------------------
 //-------------MAIN--------------
 //-------------------------------
@@ -106,6 +108,7 @@ int main(int argc, char** argv) {
 
 	// Initialize CUDA and GL components
 	init();
+
 
 	// Initialize ImGui Data
 	// InitImguiData(guiData);
@@ -220,8 +223,6 @@ void runCuda() {
 		// execute the kernel
 		int frame = 0;
 		pathtrace(frame, iteration);
-
-		
 	}
 
 	if (ui_showDepth) {
@@ -234,10 +235,12 @@ void runCuda() {
 		showGBufferNormal(pbo_dptr);
 	}
 	else if (ui_denoise && iteration == ui_iterations && !img_denoised) {
+		std::cout << "denoise image" << std::endl;
 		showDenoisedImage(pbo_dptr, iteration, ui_colorWeight, ui_normalWeight, ui_positionWeight, ui_filterSize);
 		img_denoised = true;
 	}
 	else if (ui_gaussianBlur && iteration == ui_iterations && !img_blured) {
+		std::cout << "gaussian blur" << std::endl;
 		showGaussianBlurImage(pbo_dptr, iteration, ui_filterSize);
 		img_blured = true;
 	}
