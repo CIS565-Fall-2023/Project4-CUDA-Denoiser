@@ -334,7 +334,7 @@ __global__ void generateGBuffer (
   }
 }
 
-// https://jo.dreggn.org/home/2010_atrous.pdf
+// An edge-avoiding a-trous denoising algorithm based on https://jo.dreggn.org/home/2010_atrous.pdf
 __global__ void aTrousFilter(
     glm::ivec2 resolution,
     glm::vec3* inImage,
@@ -342,7 +342,7 @@ __global__ void aTrousFilter(
     GBufferPixel* gBuffer,
     float* kernel,
     float c_phi, float n_phi, float p_phi,
-    float stepwidth
+    float stepwidth, bool avoidEdge
 )
 {
     int idx_x = (blockIdx.x * blockDim.x) + threadIdx.x;
@@ -372,7 +372,7 @@ __global__ void aTrousFilter(
             glm::ivec2 uv = glm::clamp(glm::ivec2(xOffset, yOffset), glm::ivec2(0), resolution);
             
             float weight = 1.f;
-            float h = kernel[i * 5 + j];
+            float h = kernel[(i + 2) * 5 + (j + 2)];
 
             // color difference between current and neighboring pixel
             int currIdx = uv.x + uv.y * resolution.x;
@@ -381,22 +381,24 @@ __global__ void aTrousFilter(
             float dist2 = dot(t, t);
             float c_w = min(exp(-dist2 / c_phi), 1.f);
 
-#if AVOID_EDGE
-            // normal difference
-            glm::vec3 ntemp = gBuffer[currIdx].normal;
-            t = nval - ntemp;
-            dist2 = max(dot(t, t) / (stepwidth * stepwidth), 0.f);
-            float n_w = min(exp(-dist2 / n_phi), 1.f);
+            if (avoidEdge)
+            {
+                // normal difference
+                glm::vec3 ntemp = gBuffer[currIdx].normal;
+                t = nval - ntemp;
+                dist2 = max(dot(t, t) / (stepwidth * stepwidth), 0.f);
+                float n_w = min(exp(-dist2 / n_phi), 1.f);
 
-            // position difference
-            glm::vec3 ptemp = gBuffer[currIdx].position;
-            t = pval - ptemp;
-            dist2 = dot(t, t);
-            float p_w = min(exp(-dist2 / p_phi), 1.f);
-            
-            // calculate weights
-            weight = c_w * n_w * p_w;
-#endif
+                // position difference
+                glm::vec3 ptemp = gBuffer[currIdx].position;
+                t = pval - ptemp;
+                dist2 = dot(t, t);
+                float p_w = min(exp(-dist2 / p_phi), 1.f);
+
+                // calculate weights
+                weight = c_w * n_w * p_w;
+            }
+
             sum += ctemp * weight * h;
             sumWeight += weight * h;
         }
@@ -552,7 +554,7 @@ const Camera &cam = hst_scene->state.camera;
 }
 
 // denoise and show image
-void denoise(uchar4* pbo, int iter, float c_phi, float n_phi, float p_phi, float filterSize) {
+void denoise(uchar4* pbo, int iter, float c_phi, float n_phi, float p_phi, float filterSize, bool avoidEdge) {
     const Camera& cam = hst_scene->state.camera;
     const dim3 blockSize2d(8, 8);
     const dim3 blocksPerGrid2d(
@@ -560,7 +562,7 @@ void denoise(uchar4* pbo, int iter, float c_phi, float n_phi, float p_phi, float
         (cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
 
     // calculate iterations based on filter size
-    int numIter = filterSize < 5 ? 1 : floor(log2(filterSize / 5.f)) + 1;
+    int numIter = filterSize < 5 ? 0 : floor(log2(filterSize / 5.f));
 
     // copy initial input image
     int pixelCount = cam.resolution.x * cam.resolution.y;
@@ -569,7 +571,7 @@ void denoise(uchar4* pbo, int iter, float c_phi, float n_phi, float p_phi, float
     for (int i = 0; i < numIter; i++) {
         float stepwidth = 1 << i;
         aTrousFilter << <blocksPerGrid2d, blockSize2d >> > (cam.resolution, dev_denoised_img_in, dev_denoised_img_out,
-            dev_gBuffer, dev_kernel, c_phi, n_phi, p_phi, stepwidth);
+            dev_gBuffer, dev_kernel, c_phi, n_phi, p_phi, stepwidth, avoidEdge);
 
         // ping pong buffer
         if (i != numIter - 1) { // don't swap at the last iteration
