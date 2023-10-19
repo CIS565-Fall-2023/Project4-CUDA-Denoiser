@@ -17,6 +17,7 @@
 #include "device_launch_parameters.h"
 
 #define ERRORCHECK 1
+#define USE_GAUSSIAN 1
 
 #define FILENAME (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 #define checkCUDAError(msg) checkCUDAErrorFn(msg, FILENAME, __LINE__)
@@ -134,7 +135,16 @@ float kernel[] = {
         0.0039f, 0.0156f, 0.0234f, 0.0156f, 0.0039f
 };
 
+float gaussian_kernel[] = {
+    0.00296902, 0.0133062, 0.0219382, 0.0133062, 0.00296902,
+    0.0133062, 0.0596343, 0.0983203, 0.0596343, 0.0133062,
+    0.0219382, 0.0983203, 0.162103, 0.0983203, 0.0219382,
+    0.0133062, 0.0596343, 0.0983203, 0.0596343, 0.0133062,
+    0.00296902, 0.0133062, 0.0219382, 0.0133062, 0.00296902
+};
+
 __constant__ float dev_kernel[25];
+__constant__ float dev_gausKernel[25];
 
 void pathtraceInit(Scene *scene) {
     hst_scene = scene;
@@ -165,6 +175,7 @@ void pathtraceInit(Scene *scene) {
     cudaMemset(dev_denoiseImg2, 0, pixelcount * sizeof(glm::vec3));
 
     cudaMemcpyToSymbol(dev_kernel, kernel, sizeof(kernel));
+    cudaMemcpyToSymbol(dev_gausKernel, gaussian_kernel, sizeof(gaussian_kernel));
 
     checkCUDAError("pathtraceInit");
 }
@@ -405,6 +416,35 @@ __global__ void kernDenoiser(glm::vec3* image_in, glm::vec3* image_out, GBufferP
     image_out[index] = sum / cum_w;
 }
 
+__global__ void kernGaussianBlur(glm::vec3* image_in, glm::vec3* image_out, glm::ivec2 resolution, int stepwidth)
+{
+    int x = blockDim.x * blockIdx.x + threadIdx.x;
+    int y = blockDim.y * blockIdx.y + threadIdx.y;
+
+    if (x >= resolution.x || y >= resolution.y) return;
+
+    glm::vec3 sum(0.f);
+
+    int index = x + (y * resolution.x);
+
+    for (int i = 0; i < 5; i++)
+    {
+        for (int j = 0; j < 5; j++)
+        {
+            glm::ivec2 offset = glm::ivec2(x + (i - 2) * stepwidth, y + (j - 2) * stepwidth);
+            offset = glm::clamp(offset, glm::ivec2(0, 0), glm::ivec2(resolution.x - 1, resolution.y - 1));
+
+            int uvIdx = offset.y * resolution.x + offset.x;
+
+            glm::vec3 ctmp = image_in[uvIdx];
+            float weight = dev_gausKernel[i * 5 + j];
+            sum += weight * ctmp;
+            
+        }
+    }
+    image_out[index] = sum;
+}
+
 /**
  * Wrapper for the __global__ call that sets up the kernel calls and does a ton
  * of memory management
@@ -534,8 +574,13 @@ void applyDenoiser(float c_phi, float n_phi, float p_phi, float stepwidth)
 
     for (int i = 0; i < glm::ceil(glm::log2(stepwidth)); i++) 
     {
+#if USE_GAUSSIAN
+        kernGaussianBlur<<<blocksPerGrid2d, blockSize2d>>>(dev_denoiseImg1, dev_denoiseImg2,
+            resolution, 1 << i);
+#else
         kernDenoiser<<<blocksPerGrid2d, blockSize2d>>>(dev_denoiseImg1, dev_denoiseImg2, dev_gBuffer, 
             resolution, 1 << i, c_phi, n_phi, p_phi);
+#endif
         std::swap(dev_denoiseImg1, dev_denoiseImg2);
     }
     cudaMemcpy(hst_scene->state.image.data(), dev_denoiseImg1, resolution.x * resolution.y * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
