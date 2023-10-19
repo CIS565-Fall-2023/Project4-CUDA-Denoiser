@@ -25,11 +25,12 @@
 
 #define SORT_BY_MATERIAL 0
 #define STREAM_COMPACT 0
-#define CACHE_FIRST_INTERSECTION 0
+#define CACHE_FIRST_INTERSECTION 1
 #define ENABLE_NAIVE_AABB_OPTIMISATION 1
 #define ENABLE_BVH 1
 #define ENABLE_RUSSIAN_ROULETTE 1
 #define ENABLE_HDR_GAMMA_CORRECTION 0
+#define ONLY_DENOISE_LAST_ITERATION 0
 
 #define GAMMA 2.2
 
@@ -60,4 +61,13 @@ enum class RenderMode
     NORMALS,
     DEPTH,
     COUNT
+};
+
+struct DenoiserParameters
+{
+    int maxIters;
+    int denoiseFilterSize;
+    float phiCol;
+    float phiPos;
+    float phiNor;
 };

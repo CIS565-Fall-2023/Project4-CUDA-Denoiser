@@ -546,7 +546,7 @@ __global__ void finalGather(int nPaths, int nIters, glm::vec3* image, PathSegmen
 	}
 }
 
-__global__ void denoise(const glm::vec3* readFrameBuffer, glm::vec3* writeFrameBuffer, glm::ivec2 resolution, int stepWidth)
+__global__ void denoise(const glm::vec3* readFrameBuffer, glm::vec3* writeFrameBuffer, glm::ivec2 resolution, int stepWidth, float phiCol, float phiNor, float phiPos, const GBufferPixel* gBuffer)
 {
 	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
 	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
@@ -559,6 +559,17 @@ __global__ void denoise(const glm::vec3* readFrameBuffer, glm::vec3* writeFrameB
 	int index = x * resolution.y + y;
 	writeFrameBuffer[index] = glm::vec3(0.0f);
 
+	const glm::vec3& col = readFrameBuffer[index];
+	const glm::vec3& pos = gBuffer[index].pos;
+	const glm::vec3& nor = gBuffer[index].nor;
+	glm::vec3 sum(0.0f);
+	float wSum = 0.0f;
+
+	glm::vec3 iterCol, iterNor, iterPos;
+	glm::vec3 t;
+	float dist2;
+	float colW, posW, norW, totalW;
+
 	for (int i = 0; i < 25; i++)
 	{
 		int readPxX = x + dev_offsets[i * 2] * 1;
@@ -568,15 +579,35 @@ __global__ void denoise(const glm::vec3* readFrameBuffer, glm::vec3* writeFrameB
 		readPxY = glm::clamp(readPxY, 0, resolution.x - 1);
 
 		int readPxIdx = readPxX * resolution.x + readPxY;
-		writeFrameBuffer[index] += readFrameBuffer[readPxIdx] * dev_kernel[i];
+
+		iterCol = readFrameBuffer[readPxIdx];
+		t = col - iterCol;
+		dist2 = glm::dot(t, t);
+		colW = glm::min(glm::exp(-dist2 / phiCol), 1.0f);
+
+		iterPos = gBuffer[readPxIdx].pos;
+		t = pos - iterPos;
+		dist2 = glm::dot(t, t);
+		posW = glm::min(glm::exp(-dist2 / phiPos), 1.0f);
+
+		iterNor = gBuffer[readPxIdx].nor;
+		t = nor - iterNor;
+		dist2 = glm::dot(t, t);
+		norW = glm::min(glm::exp(-dist2 / phiNor), 1.0f);
+
+		totalW = colW * posW * norW;
+		sum += iterCol * totalW * dev_kernel[i];
+		wSum += totalW * dev_kernel[i];
 	}
+
+	writeFrameBuffer[index] = sum / wSum;
 }
 
 /**
  * Wrapper for the __global__ call that sets up the kernel calls and does a ton
  * of memory management
  */
-void pathtrace(int frame, int iter, int denoiseFilterSize) {
+void pathtrace(int frame, int iter, const DenoiserParameters& denoiserParams) {
     const int traceDepth = hst_scene->state.traceDepth;
     const Camera &cam = hst_scene->state.camera;
     const int pixelcount = cam.resolution.x * cam.resolution.y;
@@ -735,16 +766,20 @@ void pathtrace(int frame, int iter, int denoiseFilterSize) {
 	dim3 numBlocksPixels = (pixelcount + blockSize1d - 1) / blockSize1d;
 	finalGather << <numBlocksPixels, blockSize1d >> > (pixelcount, iter, dev_image, dev_paths);
 
-	if (denoiseFilterSize > 0)
+#if ONLY_DENOISE_LAST_ITERATION
+	if (denoiserParams.denoiseFilterSize > 0 && iter == denoiserParams.maxIters - 1)
+#else
+	if (denoiserParams.denoiseFilterSize > 0)
+#endif
 	{
-		for (int i = 0; i < denoiseFilterSize; i++)
+		for (int i = 0; i < denoiserParams.denoiseFilterSize; i++)
 		{
 			int stepWidth = 1 << i;
 			std::swap(dev_imageRead, dev_image);
-			denoise<<<blocksPerGrid2d, blockSize2d>>>(dev_imageRead, dev_image, hst_scene->state.camera.resolution, stepWidth);
+			denoise<<<blocksPerGrid2d, blockSize2d>>>(dev_imageRead, dev_image, hst_scene->state.camera.resolution, stepWidth, denoiserParams.phiCol, denoiserParams.phiNor, denoiserParams.phiPos, dev_gBuffer);
 		}
 
-		if (denoiseFilterSize & 1 == 0)	// fast way to check denoiseFilterSize%2 == 0
+		if (denoiserParams.denoiseFilterSize & 1 == 0)	// fast way to check denoiseFilterSize%2 == 0
 		{
 			std::swap(dev_imageRead, dev_image);
 		}

@@ -130,6 +130,8 @@ void saveImage() {
 	//img.saveHDR(filename);  // Save a Radiance HDR file
 }
 
+static DenoiserParameters denoiserParams;
+
 void runCuda() {
     if (lastLoopIterations != ui_iterations) {
       lastLoopIterations = ui_iterations;
@@ -173,12 +175,18 @@ void runCuda() {
     uchar4 *pbo_dptr = NULL;
     cudaGLMapBufferObject((void**)&pbo_dptr, pbo);
 
+	denoiserParams.maxIters = ui_iterations;
+	denoiserParams.denoiseFilterSize = ui_denoise ? ui_filterSize : 0;
+	denoiserParams.phiCol = ui_colorWeight;
+	denoiserParams.phiNor = ui_normalWeight;
+	denoiserParams.phiPos = ui_positionWeight;
+
     if (iteration < ui_iterations) {
         iteration++;
 
         // execute the kernel
         int frame = 0;
-        pathtrace(frame, iteration, ui_denoise? ui_filterSize : 0);
+        pathtrace(frame, iteration, denoiserParams);
     }
 
     if (ui_renderMode == RenderMode::FULL) {
