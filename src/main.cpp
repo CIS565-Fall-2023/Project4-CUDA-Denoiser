@@ -24,10 +24,10 @@ int startupIterations = 0;
 int lastLoopIterations = 0;
 bool ui_showGbuffer = false;
 bool ui_denoise = false;
-int ui_filterSize = 80;
-float ui_colorWeight = 0.45f;
-float ui_normalWeight = 0.35f;
-float ui_positionWeight = 0.2f;
+int ui_filterSize = 65;
+float ui_colorWeight = 0.25f;
+float ui_normalWeight = 0.1f;
+float ui_positionWeight = 0.8f;
 bool ui_saveAndExit = false;
 
 static bool camchanged = true;

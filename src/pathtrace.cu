@@ -1,6 +1,7 @@
 #include <cstdio>
 #include <cuda.h>
 #include <cmath>
+#include <chrono>
 #include <thrust/execution_policy.h>
 #include <thrust/random.h>
 #include <thrust/remove.h>
@@ -490,6 +491,7 @@ void showGBuffer(uchar4* pbo) {
 
 // note phi values are equal to sigma^2 terms in weight denoms in paper
 void showDenoised(uchar4* pbo, int f_size, float c_phi, float n_phi, float p_phi, int iter) {
+    auto start = std::chrono::system_clock::now();
     const Camera& cam = hst_scene->state.camera;
     const dim3 blockSize2d(8, 8);
     const dim3 blocksPerGrid2d(
@@ -509,6 +511,11 @@ void showDenoised(uchar4* pbo, int f_size, float c_phi, float n_phi, float p_phi
         // in testing halving sigma values(/4 phi) as suggested in paper worsened results, so excluded
         step <<= 1;
     }
+    cudaDeviceSynchronize();
+    auto end = std::chrono::system_clock::now();
+    auto elapsed_ms = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+    std::cout << "Denoise runtime us: " << elapsed_ms.count() << std::endl;
+
     //sendImageToPBO on final img
     sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, iter, dev_denoised1);
 }
