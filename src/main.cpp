@@ -23,11 +23,11 @@ int ui_iterations = 0;
 int startupIterations = 0;
 int lastLoopIterations = 0;
 bool ui_showGbuffer = false;
-bool ui_denoise = false;
-int ui_filterSize = 80;
-float ui_colorWeight = 0.45f;
-float ui_normalWeight = 0.35f;
-float ui_positionWeight = 0.2f;
+bool ui_denoise = true;
+int ui_filterSize = 3;
+float ui_colorWeight = 0.50f;
+float ui_normalWeight = 0.50f;
+float ui_positionWeight = 0.50f;
 bool ui_saveAndExit = false;
 
 static bool camchanged = true;
@@ -151,6 +151,7 @@ void runCuda() {
 
     if (iteration == 0) {
         pathtraceFree();
+        updateData(ui_denoise, ui_filterSize, ui_positionWeight, ui_normalWeight, ui_colorWeight);
         pathtraceInit(scene);
     }
 
@@ -164,11 +165,12 @@ void runCuda() {
         int frame = 0;
         pathtrace(frame, iteration);
     }
-
+    
     if (ui_showGbuffer) {
       showGBuffer(pbo_dptr);
-    } else {
-      showImage(pbo_dptr, iteration);
+    } 
+    else {
+        showImage(pbo_dptr, iteration);
     }
 
     // unmap buffer object

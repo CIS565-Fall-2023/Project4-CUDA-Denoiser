@@ -8,3 +8,4 @@ void pathtraceFree();
 void pathtrace(int frame, int iteration);
 void showGBuffer(uchar4 *pbo);
 void showImage(uchar4 *pbo, int iter);
+void updateData(bool denoise, int filterSize, float posWeight, float norWeight, float colWeight);
