@@ -11,4 +11,6 @@ void showGBufferDepth(uchar4* pbo);
 void showGBufferPos(uchar4* pbo);
 void showGBufferNormal(uchar4* pbo);
 void showDenoisedImage(uchar4* pbo, int iter, float colWeight, float norWeight, float posWeight, int filterSize);
+void showGaussianBlurImage(uchar4* pbo, int iter, int filterSize);
 void showImage(uchar4* pbo, int iter);
+void retrieveImage();

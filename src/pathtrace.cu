@@ -46,6 +46,27 @@ thrust::default_random_engine makeSeededRandomEngine(int iter, int index, int de
 	return thrust::default_random_engine(h);
 }
 
+__host__ __device__
+glm::vec3 decodeNormal(float x, float y) {
+	glm::vec3 nor = glm::vec3(x, y, 1.0f - abs(x) - abs(y));
+	float t = glm::clamp(-nor.z, 0.0f, 1.0f);
+	nor.x += nor.x >= 0.0f ? -t : t;
+	nor.y += nor.y >= 0.0f ? -t : t;
+	return glm::normalize(nor);
+}
+
+__host__ __device__
+void encodeNormal(glm::vec3& nor) {
+	float absSum = abs(nor.x) + abs(nor.y) + abs(nor.z);
+	if (absSum > 0.001f) {
+		nor /= absSum;
+		if (nor.z < 0) {
+			nor.x = (1.0f - abs(nor.y)) * (nor.x > 0.0f ? 1.0f : -1.0f);
+			nor.y = (1.0f - abs(nor.x)) * (nor.y > 0.0f ? 1.0f : -1.0f);
+		}
+	}
+}
+
 //Kernel that writes the image to the OpenGL PBO directly.
 __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution,
 	int iter, glm::vec3* image) {
@@ -70,6 +91,36 @@ __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution,
 }
 
 
+__global__ void	gaussianBlur(glm::ivec2 resolution,
+	int iter, glm::vec3* image, int filterSize) {
+	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+
+	if (x < resolution.x && y < resolution.y) {
+		int index = x + (y * resolution.x);
+		const float kernel[25] = {
+			0.00391f, 0.01563f, 0.02344f, 0.01563f, 0.00391f,
+			0.01563f, 0.0625f, 0.09375f, 0.0625f, 0.01563f,
+			0.02344f, 0.09375f, 0.14063f,  0.09375f, 0.02344f,
+			0.01563f, 0.0625f, 0.09375f, 0.0625f, 0.01563f,
+			0.00391f, 0.01563f, 0.02344f, 0.01563f, 0.00391f
+		};
+		glm::vec3 sum = glm::vec3(0.0f);
+		for (int dx = -2; dx <= 2; dx++) {
+			for (int dy = -2; dy <= 2; dy++) {
+				int nx = x + dx * filterSize;
+				int ny = y + dy * filterSize;
+				if (nx >= 0 && nx < resolution.x && ny >= 0 && ny < resolution.y) {
+					int tmpIndex = nx + (ny * resolution.x);
+					sum += image[tmpIndex] * kernel[dx + 2 + 5 * (dy + 2)];
+				}
+			}
+		}
+
+		image[index] = sum;
+	}
+}
+
 __global__ void denoise(glm::ivec2 resolution, Camera cam,
 	float colWeight, float norWeight, float posWeight, int step,
 	int iter, glm::vec3* image, GBufferPixel* gBuffer) {
@@ -81,7 +132,11 @@ __global__ void denoise(glm::ivec2 resolution, Camera cam,
 
 		glm::vec3 sum = glm::vec3(0.);
 		glm::vec3 col = image[index] / (float)iter;
+#ifdef OCT_ENCODE_NORMAL
+		glm::vec3 nor = decodeNormal(gBuffer[index].nx, gBuffer[index].ny);
+#else
 		glm::vec3 nor = gBuffer[index].normal;
+#endif
 		glm::vec3 dir = glm::normalize(cam.view
 			- cam.right * cam.pixelLength.x * ((float)x - (float)cam.resolution.x * 0.5f)
 			- cam.up * cam.pixelLength.y * ((float)y - (float)cam.resolution.y * 0.5f));
@@ -110,7 +165,12 @@ __global__ void denoise(glm::ivec2 resolution, Camera cam,
 					float dist2 = glm::dot(t, t);
 					float cw = min(exp(-(dist2) / colWeight), 1.0f);
 
+					
+#ifdef OCT_ENCODE_NORMAL
+					glm::vec3 tmpNor = decodeNormal(gBuffer[tmpIndex].nx, gBuffer[tmpIndex].ny);
+#else
 					glm::vec3 tmpNor = gBuffer[tmpIndex].normal;
+#endif
 					t = nor - tmpNor;
 					dist2 = glm::dot(t, t);
 					float nw = min(exp(-(dist2) / norWeight), 1.0f);
@@ -179,7 +239,8 @@ __global__ void gbufferNormalToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPi
 
 	if (x < resolution.x && y < resolution.y) {
 		int index = x + (y * resolution.x);
-		glm::vec3 nor = (gBuffer[index].normal * 0.5f + glm::vec3(0.5f)) * 256.0f;
+		glm::vec3 nor = decodeNormal(gBuffer[index].nx, gBuffer[index].ny);
+		nor = (nor * 0.5f + glm::vec3(0.5f)) * 256.0f;
 
 		pbo[index].w = 0;
 		pbo[index].x = nor.x;
@@ -699,7 +760,14 @@ __global__ void generateGBuffer(
 	{
 		gBuffer[idx].t = shadeableIntersections[idx].t;
 		// gBuffer[idx].pos = max(shadeableIntersections[idx].t, 0.0f) * glm::normalize(pathSegments[idx].ray.direction) + pathSegments[idx].ray.origin;
+#ifdef OCT_ENCODE_NORMAL
+		glm::vec3 nor = shadeableIntersections[idx].surfaceNormal;
+		encodeNormal(nor);
+		gBuffer[idx].nx = nor.x;
+		gBuffer[idx].ny = nor.y;
+#else
 		gBuffer[idx].normal = shadeableIntersections[idx].surfaceNormal;
+#endif
 	}
 }
 
@@ -971,7 +1039,13 @@ void pathtrace(int frame, int iter) {
 
 	/////////////////////////////////////////////////////////////////////////////
 
+	retrieveImage();
+}
+
+void retrieveImage() {
 	// Retrieve image from GPU
+	const Camera& cam = hst_scene->state.camera;
+	const int pixelcount = cam.resolution.x * cam.resolution.y;
 	cudaMemcpy(hst_scene->state.image.data(), dev_image,
 		pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
 
@@ -1039,7 +1113,18 @@ void showDenoisedImage(uchar4* pbo, int iter, float colWeight, float norWeight, 
 			iter, dev_image, dev_gBuffer);
 	}
 	
-	
+	// Send results to OpenGL buffer for rendering
+	sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, iter, dev_image);
+}
+
+void showGaussianBlurImage(uchar4* pbo, int iter, int filterSize) {
+	const Camera& cam = hst_scene->state.camera;
+	const dim3 blockSize2d(8, 8);
+	const dim3 blocksPerGrid2d(
+		(cam.resolution.x + blockSize2d.x - 1) / blockSize2d.x,
+		(cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
+
+	gaussianBlur << <blocksPerGrid2d, blockSize2d >> > (cam.resolution, iter, dev_image, filterSize);
 
 	// Send results to OpenGL buffer for rendering
 	sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, iter, dev_image);

@@ -5,6 +5,8 @@
 #include <cuda_runtime.h>
 #include "glm/glm.hpp"
 
+#define OCT_ENCODE_NORMAL
+
 #define BACKGROUND_COLOR (glm::vec3(0.0f))
 #define BBOX_TRI_NUM 4
 #define BVH_GPU_STACK_SIZE 128
@@ -128,5 +130,11 @@ struct ShadeableIntersection {
 struct GBufferPixel {
     float t;
     // glm::vec3 pos;
+    
+#ifdef OCT_ENCODE_NORMAL
+    float nx;
+    float ny;
+#else
     glm::vec3 normal;
+#endif
 };

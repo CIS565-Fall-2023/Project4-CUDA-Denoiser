@@ -35,7 +35,7 @@ Scene::Scene(string filename) {
         }
     }
 
-#ifdef USING_BVH
+#ifdef USING_BVH 
     buildTree();
 #endif
 }

@@ -26,6 +26,7 @@ bool ui_showDepth = false;
 bool ui_showPos = false;
 bool ui_showNormal = false;
 bool ui_denoise = false;
+bool ui_gaussianBlur = false;
 int ui_filterSize = 80;
 float ui_colorWeight = 0.45f;
 float ui_normalWeight = 0.35f;
@@ -33,6 +34,7 @@ float ui_positionWeight = 0.2f;
 bool ui_saveAndExit = false;
 
 bool img_denoised = false;
+bool img_blured = false;
 int prev_ui_iterations = 0;
 int prev_ui_filterSize = 80;
 float prev_ui_colorWeight = 0.45f;
@@ -116,6 +118,8 @@ int main(int argc, char** argv) {
 }
 
 void saveImage() {
+	retrieveImage();
+
 	float samples = iteration;
 	// output image file
 	image img(width, height);
@@ -130,6 +134,7 @@ void saveImage() {
 
 	std::string filename = renderState->imageName;
 	std::ostringstream ss;
+	startTimeString = currentTimeString();
 	ss << filename << "." << startTimeString << "." << samples << "samp";
 	filename = ss.str();
 
@@ -163,6 +168,7 @@ void runCuda() {
 		cam.position = cameraPosition;
 		camchanged = false;
 		img_denoised = false;
+		img_blured = false;
 	}
 
 	if (!denoiseChanged && ui_denoise) {
@@ -174,16 +180,27 @@ void runCuda() {
 		denoiseChanged = false;
 		iteration = 0;
 	}
-	if (prev_ui_iterations != ui_iterations || prev_ui_filterSize != ui_filterSize || prev_ui_colorWeight != ui_colorWeight || prev_ui_normalWeight != ui_normalWeight || prev_ui_positionWeight != ui_positionWeight) {
+	if (prev_ui_iterations != ui_iterations || prev_ui_filterSize != ui_filterSize) {
+		prev_ui_iterations = ui_iterations;
+		prev_ui_filterSize = ui_filterSize;
+		if (ui_denoise || ui_gaussianBlur) {
+			iteration = 0;
+		}
+		img_denoised = false;
+		img_blured = false;
+	}
+	if (prev_ui_colorWeight != ui_colorWeight || prev_ui_normalWeight != ui_normalWeight || prev_ui_positionWeight != ui_positionWeight) {
 		if (ui_denoise) {
 			iteration = 0;
 		}
 		img_denoised = false;
-		prev_ui_iterations = ui_iterations;
-		prev_ui_filterSize = ui_filterSize;
 		prev_ui_colorWeight = ui_colorWeight;
 		prev_ui_normalWeight = ui_normalWeight;
 		prev_ui_positionWeight = ui_positionWeight;
+	}
+	if (!ui_gaussianBlur && img_blured) {
+		img_blured = false;
+		iteration = 0;
 	}
 
 	// Map OpenGL buffer object for writing from CUDA on a single GPU
@@ -219,6 +236,10 @@ void runCuda() {
 	else if (ui_denoise && iteration == ui_iterations && !img_denoised) {
 		showDenoisedImage(pbo_dptr, iteration, ui_colorWeight, ui_normalWeight, ui_positionWeight, ui_filterSize);
 		img_denoised = true;
+	}
+	else if (ui_gaussianBlur && iteration == ui_iterations && !img_blured) {
+		showGaussianBlurImage(pbo_dptr, iteration, ui_filterSize);
+		img_blured = true;
 	}
 	else {
 		showImage(pbo_dptr, iteration);

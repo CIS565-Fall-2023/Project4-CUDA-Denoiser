@@ -38,6 +38,7 @@ extern bool ui_showDepth;
 extern bool ui_showNormal;
 extern bool ui_showPos;
 extern bool ui_denoise;
+extern bool ui_gaussianBlur;
 extern int ui_filterSize;
 extern float ui_colorWeight;
 extern float ui_normalWeight;
