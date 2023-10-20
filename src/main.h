@@ -38,6 +38,7 @@ extern bool ui_showGbuffer;
 extern bool ui_showPosition;
 extern bool ui_denoise;
 extern int ui_filterSize;
+extern bool ui_weighted;
 extern float ui_colorWeight;
 extern float ui_normalWeight;
 extern float ui_positionWeight;

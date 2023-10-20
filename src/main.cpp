@@ -21,7 +21,8 @@ int lastLoopIterations = 0;
 bool ui_showGbuffer = false;
 bool ui_showPosition = false;
 bool ui_denoise = false;
-int ui_filterSize = 80;
+int ui_filterSize = 8;
+bool ui_weighted = false;
 float ui_colorWeight = 0.45f;
 float ui_normalWeight = 0.35f;
 float ui_positionWeight = 0.2f;
@@ -167,13 +168,13 @@ void runCuda() {
 
 		// execute the kernel
 		int frame = 0;
-		pathtrace(frame, iteration);
+		pathtrace(frame, iteration, ui_denoise, ui_filterSize, ui_weighted, ui_colorWeight, ui_normalWeight, ui_positionWeight);
 	}
 
 	if (ui_showGbuffer) {
 		showGBuffer(pbo_dptr, ui_showPosition);
 	} else {
-		showImage(pbo_dptr, iteration);
+		showImage(pbo_dptr, iteration, ui_denoise);
 	}
 
 	// unmap buffer object
