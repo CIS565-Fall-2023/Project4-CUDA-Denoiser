@@ -48,11 +48,41 @@ REFR        0
 REFRIOR     0
 EMITTANCE   0
 
+// Refractive white
+MATERIAL 5
+RGB         0 0 0
+SPECEX      0
+SPECRGB     .98 .98 .98
+REFL        0
+REFR        1
+REFRIOR     1.55
+EMITTANCE   0
+
+// Glass white
+MATERIAL 6
+RGB         .98 .98 .98
+SPECEX      0
+SPECRGB     .98 .98 .98
+REFL        1
+REFR        1
+REFRIOR     1.55
+EMITTANCE   0
+
+// Plastic white but turns out black??
+MATERIAL 7
+RGB         0.98 0.98 0.98
+SPECEX      0
+SPECRGB     0.98 0.98 0.98
+REFL        1
+REFR        0
+REFRIOR     1.55
+EMITTANCE   0
+
 // Camera
 CAMERA
 RES         800 800
 FOVY        45
-ITERATIONS  500
+ITERATIONS  150
 DEPTH       8
 FILE        cornell
 EYE         0.0 5 10.5
@@ -114,4 +144,4 @@ sphere
 material 4
 TRANS       -1 4 -1
 ROTAT       0 0 0
-SCALE       3 3 3
+SCALE       4 4 4

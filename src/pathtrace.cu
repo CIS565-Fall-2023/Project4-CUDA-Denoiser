@@ -15,7 +15,6 @@
 #include "interactions.h"
 
 #define ERRORCHECK 1
-#define AVOID_EDGE 0
 
 // http://demofox.org/gauss.html with sigma=1.0, support=0.5
 const float kernel[25] = {
@@ -46,6 +45,12 @@ void checkCUDAErrorFn(const char *msg, const char *file, int line) {
 #  endif
     exit(EXIT_FAILURE);
 #endif
+}
+
+PerformanceTimer& timer()
+{
+    static PerformanceTimer timer;
+    return timer;
 }
 
 __host__ __device__
@@ -195,6 +200,7 @@ __global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, Path
 
 		segment.ray.origin = cam.position;
     segment.color = glm::vec3(1.0f, 1.0f, 1.0f);
+    segment.throughput = glm::vec3(1.f);
 
 		segment.ray.direction = glm::normalize(cam.view
 			- cam.right * cam.pixelLength.x * ((float)x - (float)cam.resolution.x * 0.5f)
@@ -285,6 +291,7 @@ __global__ void shadeSimpleMaterials (
   {
     ShadeableIntersection intersection = shadeableIntersections[idx];
     PathSegment segment = pathSegments[idx];
+
     if (segment.remainingBounces == 0) {
       return;
     }
@@ -296,16 +303,17 @@ __global__ void shadeSimpleMaterials (
 
       Material material = materials[intersection.materialId];
       glm::vec3 materialColor = material.color;
+      segment.throughput = materialColor;
 
       // If the material indicates that the object was a light, "light" the ray
       if (material.emittance > 0.0f) {
-        segment.color *= (materialColor * material.emittance);
+          segment.color *= (materialColor * material.emittance);// *segment.throughput;
         segment.remainingBounces = 0;
       }
       else {
-        segment.color *= materialColor;
+        segment.color *= segment.throughput;
         glm::vec3 intersectPos = intersection.t * segment.ray.direction + segment.ray.origin;
-        scatterRay(segment, intersectPos, intersection.surfaceNormal, material, rng);
+        scatterRayMoreMats(segment, intersectPos, intersection.surfaceNormal, material, rng);
       }
     // If there was no intersection, color the ray black.
     // Lots of renderers use 4 channel color, RGBA, where A = alpha, often
@@ -554,7 +562,7 @@ const Camera &cam = hst_scene->state.camera;
 }
 
 // denoise and show image
-void denoise(uchar4* pbo, int iter, float c_phi, float n_phi, float p_phi, float filterSize, bool avoidEdge) {
+void denoise(uchar4* pbo, int iter, float c_phi, float n_phi, float p_phi, float filterSize, bool avoidEdge, int callCount) {
     const Camera& cam = hst_scene->state.camera;
     const dim3 blockSize2d(8, 8);
     const dim3 blocksPerGrid2d(
@@ -564,11 +572,13 @@ void denoise(uchar4* pbo, int iter, float c_phi, float n_phi, float p_phi, float
     // calculate iterations based on filter size
     int numIter = filterSize < 5 ? 0 : floor(log2(filterSize / 5.f));
 
+    timer().startGpuTimer();
+
     // copy initial input image
     int pixelCount = cam.resolution.x * cam.resolution.y;
     cudaMemcpy(dev_denoised_img_in, dev_image, pixelCount * sizeof(glm::vec3), cudaMemcpyDeviceToDevice);
-    
-    for (int i = 0; i < numIter; i++) {
+
+    for (int i = 0; i <= numIter; i++) {
         float stepwidth = 1 << i;
         aTrousFilter << <blocksPerGrid2d, blockSize2d >> > (cam.resolution, dev_denoised_img_in, dev_denoised_img_out,
             dev_gBuffer, dev_kernel, c_phi, n_phi, p_phi, stepwidth, avoidEdge);
@@ -578,7 +588,12 @@ void denoise(uchar4* pbo, int iter, float c_phi, float n_phi, float p_phi, float
             std::swap(dev_denoised_img_in, dev_denoised_img_out);
         }
     }
+    timer().endGpuTimer();
 
     // Send results to OpenGL buffer for rendering
     sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, iter, dev_denoised_img_out);
+
+    if (callCount < TIMER_COUNT) {
+        std::cout << "Denoiser: " << timer().getGpuElapsedTimeForPreviousOperation() << "ms. " << std::endl;
+    }
 }
