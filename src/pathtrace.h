@@ -6,6 +6,9 @@
 void pathtraceInit(Scene *scene);
 void pathtraceFree();
 void pathtrace(int frame, int iteration);
-void showGBuffer(uchar4 *pbo, const bool& ui_showGbuffer, 
-	const bool& ui_showGbufferNormal, const bool& ui_showGbufferPos);
+void showGBuffer(uchar4 *pbo, int interation, bool showGbuffer, bool showNormal);
 void showImage(uchar4 *pbo, int iter);
+
+void initDenoiser();
+void denoiserFree();
+void denoiser(glm::ivec2 resolution, int iter);

@@ -57,6 +57,10 @@ struct RenderState {
     int traceDepth;
     std::vector<glm::vec3> image;
     std::string imageName;
+
+    bool denoise;
+    int filterSize;
+    float c_phi, n_phi, p_phi;
 };
 
 struct PathSegment {
@@ -78,7 +82,7 @@ struct ShadeableIntersection {
 // CHECKITOUT - a simple struct for storing scene geometry information per-pixel.
 // What information might be helpful for guiding a denoising filter?
 struct GBufferPixel {
-  float t;        // intersection point 
-  glm::vec3 normal; 
+  float t;          // intersection point 
+  glm::vec3 normal; // normal
   glm::vec3 pos;    // world pos
 };

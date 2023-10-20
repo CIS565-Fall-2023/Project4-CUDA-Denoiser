@@ -70,34 +70,32 @@ __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution,
 }
 
 __global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* gBuffer, 
-    bool ui_showGbuffer, bool ui_showGbufferNormal,bool ui_showGbufferPos) {
+    int iter, bool showGbuffer, bool showNormal) {
     int x = (blockIdx.x * blockDim.x) + threadIdx.x;
     int y = (blockIdx.y * blockDim.y) + threadIdx.y;
 
     if (x < resolution.x && y < resolution.y) {
         int index = x + (y * resolution.x);
 
-        glm::vec3 buffer = glm::vec3(0.f);
+        glm::vec3 buffer;
 
-        if (ui_showGbuffer) {
+        if (showGbuffer) {
             buffer = glm::vec3(gBuffer[index].t);
         }
-        else if (ui_showGbufferNormal) {
-            buffer = gBuffer[index].normal;
+        else if (showNormal) {
+            // remap the change of normal from [-1, 1] to [0, 1]
+            buffer = (gBuffer[index].normal / static_cast<float>(iter) + 1.0f) / 2.0f;
         }
         else {
-            buffer = gBuffer[index].pos;
+            buffer = gBuffer[index].pos / static_cast<float>(iter);
         }
         
         pbo[index].w = 0;
-        pbo[index].x = buffer.x * 256.0;
-        pbo[index].y = buffer.y * 256.0;
-        pbo[index].z = buffer.z * 256.0;
+        pbo[index].x = buffer.x * 255.0;
+        pbo[index].y = buffer.y * 255.0;
+        pbo[index].z = buffer.z * 255.0;
     }
 }
-
-#define A_TROUS_DENOISER 
-// #define A_TROUS_WEIGHTED_DENOISER 
 
 static Scene * hst_scene = NULL;
 static glm::vec3 * dev_image = NULL;
@@ -108,11 +106,6 @@ static ShadeableIntersection * dev_intersections = NULL;
 static GBufferPixel* dev_gBuffer = NULL;
 // TODO: static variables for device memory, any extra info you need, etc
 // ...
-static glm::vec3* dev_denoised_image = NULL;
-
-#ifdef A_TROUS_DENOISER
-const int MAX_LEVEL = 16;
-#endif
 
 void pathtraceInit(Scene *scene) {
     hst_scene = scene;
@@ -136,9 +129,6 @@ void pathtraceInit(Scene *scene) {
     cudaMalloc(&dev_gBuffer, pixelcount * sizeof(GBufferPixel));
 
     // TODO: initialize any extra device memeory you need
-    cudaMalloc(&dev_denoised_image, pixelcount * sizeof(glm::vec3));
-    cudaMemset(dev_denoised_image, 0, pixelcount * sizeof(glm::vec3));
-
     checkCUDAError("pathtraceInit");
 }
 
@@ -150,8 +140,6 @@ void pathtraceFree() {
   	cudaFree(dev_intersections);
     cudaFree(dev_gBuffer);
     // TODO: clean up any extra device memory you created
-
-    cudaFree(dev_denoised_image);
     checkCUDAError("pathtraceFree");
 }
 
@@ -308,12 +296,12 @@ __global__ void generateGBuffer (
   {
     gBuffer[idx].t = shadeableIntersections[idx].t;
     gBuffer[idx].normal += shadeableIntersections[idx].surfaceNormal;
+
     if (shadeableIntersections[idx].t == -1) {
         gBuffer[idx].pos += glm::vec3(0.f);
     }
     else {
-        gBuffer[idx].pos += getWorldPos(pathSegments[idx].ray,
-            shadeableIntersections[idx].t);
+        gBuffer[idx].pos += getWorldPos(pathSegments[idx].ray, shadeableIntersections[idx].t);
     }
   }
 }
@@ -330,11 +318,55 @@ __global__ void finalGather(int nPaths, glm::vec3 * image, PathSegment * iterati
 	}
 }
 
+// Apply Edge-Avoiding A-Trous Wavelet Denoiser
+void denoiser(glm::ivec2 resolution, int iter ) {
+    // 2D block for generating ray from camera
+    int pixelcount = resolution.x * resolution.y;
+
+    initDenoiser();
+    cudaMalloc(&dev_denoised_curr_image, pixelcount * sizeof(glm::vec3));
+    cudaMemcpy(dev_denoised_curr_image, dev_image, pixelcount * sizeof(glm::vec3),
+        cudaMemcpyDeviceToDevice);
+
+    cudaMalloc(&dev_denoised_next_image, pixelcount * sizeof(glm::vec3));
+
+    const dim3 blockSize2d(8, 8);
+    const dim3 blocksPerGrid2d(
+        (resolution.x + blockSize2d.x - 1) / blockSize2d.x,
+        (resolution.y + blockSize2d.y - 1) / blockSize2d.y);
+
+    for (int i = 0; i < hst_scene->state.filterSize; ++i) {
+        size_t stepwidth = static_cast<size_t>(1) << i;
+
+        denoiserKernel << <blocksPerGrid2d, blockSize2d >> > (
+            dev_denoised_curr_image,
+            dev_denoised_next_image,
+            dev_gBuffer,
+            resolution,
+            stepwidth,
+            hst_scene->state.c_phi,
+            hst_scene->state.n_phi,
+            hst_scene->state.p_phi,
+            iter
+            );
+        checkCUDAError("Denoiser Failed!");
+
+        std::swap(dev_denoised_curr_image, dev_denoised_next_image);
+    }
+    cudaDeviceSynchronize();
+
+    cudaMemcpy(dev_image, dev_denoised_curr_image, pixelcount * sizeof(glm::vec3),
+        cudaMemcpyDeviceToDevice);
+    
+    denoiserFree();
+}
+
 /**
  * Wrapper for the __global__ call that sets up the kernel calls and does a ton
  * of memory management
  */
 void pathtrace(int frame, int iter) {
+
     const int traceDepth = hst_scene->state.traceDepth;
     const Camera &cam = hst_scene->state.camera;
     const int pixelcount = cam.resolution.x * cam.resolution.y;
@@ -434,6 +466,10 @@ void pathtrace(int frame, int iter) {
     dim3 numBlocksPixels = (pixelcount + blockSize1d - 1) / blockSize1d;
 	finalGather<<<numBlocksPixels, blockSize1d>>>(pixelcount, dev_image, dev_paths);
 
+    if (hst_scene->state.denoise) {
+        denoiser(cam.resolution, iter);
+    }
+
     ///////////////////////////////////////////////////////////////////////////
 
     // CHECKITOUT: use dev_image as reference if you want to implement saving denoised images.
@@ -446,8 +482,7 @@ void pathtrace(int frame, int iter) {
 }
 
 // CHECKITOUT: this kernel "post-processes" the gbuffer/gbuffers into something that you can visualize for debugging.
-void showGBuffer(uchar4* pbo, const bool& ui_showGbuffer, 
-    const bool& ui_showGbufferNormal, const bool& ui_showGbufferPos) {
+void showGBuffer(uchar4* pbo, int iteration, bool showGbuffer, bool showNormal) {
     const Camera &cam = hst_scene->state.camera;
     const dim3 blockSize2d(8, 8);
     const dim3 blocksPerGrid2d(
@@ -455,8 +490,8 @@ void showGBuffer(uchar4* pbo, const bool& ui_showGbuffer,
             (cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
 
     // CHECKITOUT: process the gbuffer results and send them to OpenGL buffer for visualization
-    gbufferToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, dev_gBuffer,
-        ui_showGbuffer, ui_showGbufferNormal, ui_showGbufferPos);
+    gbufferToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, dev_gBuffer, iteration,
+        showGbuffer, showNormal);
 }
 
 void showImage(uchar4* pbo, int iter) {
