@@ -8,7 +8,7 @@
 #define BACKGROUND_COLOR (glm::vec3(0.0f))
 
 #define GBUFFER_Z 0
-#define GBUFFER_OCT 1
+#define GBUFFER_OCT 0
 
 enum GeomType {
     SPHERE,

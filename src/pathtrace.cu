@@ -21,6 +21,9 @@
 #define DISPLAY_GBUFFER_POSITION 0
 #define DISPLAY_GBUFFER_DUMMY 0
 
+#define USE_GAUSSIAN 0
+#define sigma 5.0
+
 #define SORT_MATERIALS 0
 #define FIRST_BOUNCE_CACHE 0
 #define ANTI_ALIASING 0
@@ -199,6 +202,10 @@ static ShadeableIntersection* dev_intersections = NULL;
 static GBufferPixel* dev_gBuffer = NULL;
 static glm::vec3* dev_denoised_image = NULL;
 static glm::vec3* dev_denoised_image_next = NULL;
+#if USE_GAUSSIAN
+static float* dev_gaussian_kernel = NULL;
+static float lastFilterSize = 0.f;
+#endif
 
 #if FIRST_BOUNCE_CACHE
 static ShadeableIntersection* dev_first_bounce_cache = NULL;
@@ -282,7 +289,7 @@ void pathtraceInit(Scene* scene) {
 
 	cudaMalloc(&dev_denoised_image_next, pixelcount * sizeof(glm::vec3));
 	cudaMemset(dev_denoised_image_next, 0, pixelcount * sizeof(glm::vec3));
-	
+
 	checkCUDAError("pathtraceInit");
 }
 
@@ -316,6 +323,12 @@ void pathtraceFree() {
 	cudaFree(dev_gBuffer);
 	cudaFree(dev_denoised_image);
 	cudaFree(dev_denoised_image_next);
+
+#if USE_GAUSSIAN
+	if (dev_gaussian_kernel != NULL) {
+		cudaFree(dev_gaussian_kernel);
+	}
+#endif
 
 	checkCUDAError("pathtraceFree");
 }
@@ -893,6 +906,28 @@ __global__ void aTrousFilter(const Camera cam, GBufferPixel* gbuffer, const glm:
 	}
 }
 
+__global__ void gaussianFilter(glm::ivec2 resolution, const glm::vec3* in_image, glm::vec3* out_image, const float* kernel, int radius) {
+	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+	int index = x + y * resolution.x;
+
+	
+	if (x < resolution.x && y < resolution.y) {
+		glm::vec3 color(0.0f);
+
+		for (int i = -radius; i <= radius; ++i) {
+			for (int j = -radius; j <= radius; ++j) {
+				int xIndex = glm::clamp(x + i, 0, resolution.x - 1);
+				int yIndex = glm::clamp(y + j, 0, resolution.y - 1);
+				int curIndex = xIndex + yIndex * resolution.x;
+				color += kernel[abs(i) + abs(j) * (radius + 1)] * in_image[curIndex];
+			}
+		}
+
+		out_image[index] = color;
+	}
+}
+
 /**
  * Wrapper for the __global__ call that sets up the kernel calls and does a ton
  * of memory management
@@ -1175,8 +1210,52 @@ void denoise(float colorWeight, float normalWeight, float positionWeight, float 
 
 	// divide by iteration
 	//cudaMemcpy(dev_denoised_image, dev_image, pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToDevice);
-	copyImage << <blocksPerGrid2d, blockSize2d >> > (resolution, iter, dev_image, dev_denoised_image);
+#if USE_GAUSSIAN
+	if (lastFilterSize != filterSize) {
+		// compute kernel
+		lastFilterSize = filterSize;
+		if (dev_gaussian_kernel != NULL) {
+			cudaFree(dev_gaussian_kernel);
+		}
 
+		int radius = filterSize / 2 + 1;
+		filterSize = 2 * radius - 1; // guarantee to be odd
+		cudaMalloc(&dev_gaussian_kernel, radius * radius * sizeof(float));
+
+		float* hst_gaussian_kernel = new float[radius * radius];
+		float sum = 0.0f;
+		for (int i = 0; i < radius; ++i) {
+			for (int j = 0; j < radius; ++j) {
+				hst_gaussian_kernel[i * radius + j] =
+					exp(-(i * i + j * j) / (2.0f * sigma * sigma)) / (TWO_PI * sigma * sigma);
+
+				if (i == 0 && j == 0) {
+					sum += hst_gaussian_kernel[i * radius + j];
+				} else if (i == 0 || j == 0) {
+					sum += 2.0f * hst_gaussian_kernel[i * radius + j];
+				} else {
+					sum += 4.0f * hst_gaussian_kernel[i * radius + j];
+				}
+			}
+		}
+
+		// normalize
+		for (int i = 0; i < radius; ++i) {
+			for (int j = 0; j < radius; ++j) {
+				hst_gaussian_kernel[i * radius + j] /= sum;
+			}
+		}
+
+		cudaMemcpy(dev_gaussian_kernel, hst_gaussian_kernel, radius * radius * sizeof(float), cudaMemcpyHostToDevice);
+
+		/*const dim3 kernelSize2d(radius, radius);
+		generateGaussianKernel << <1, kernelSize2d, radius * radius >> > (radius, dev_gaussian_kernel);*/
+		delete[] hst_gaussian_kernel;
+	}
+
+	gaussianFilter << <blocksPerGrid2d, blockSize2d >> > (resolution, dev_image, dev_denoised_image, dev_gaussian_kernel, filterSize / 2);
+#else
+	copyImage << <blocksPerGrid2d, blockSize2d >> > (resolution, iter, dev_image, dev_denoised_image);
 	// iteration determined by desired filter size
 	int iterCount = (int)(glm::log2((float)filterSize / 4.0f));
 	int step = 1;
@@ -1188,7 +1267,7 @@ void denoise(float colorWeight, float normalWeight, float positionWeight, float 
 		std::swap(dev_denoised_image, dev_denoised_image_next);
 		step <<= 1;
 	}
-
 	restoreImage<<<blocksPerGrid2d, blockSize2d >> > (resolution, iter, dev_denoised_image);
+#endif
 	cudaMemcpy(hst_scene->state.image.data(), dev_denoised_image, pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
 }
