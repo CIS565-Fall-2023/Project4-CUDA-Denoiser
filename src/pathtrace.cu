@@ -506,19 +506,18 @@ __global__ void aTrousOneIter(glm::vec3* buffer_in,  // smoothed image from last
     glm::vec3 q_rt = buffer_in[q_idx];
     glm::vec3 diff = q_rt - p_rt;
     float dist2 = dot(diff, diff);
-    // modified to counter fireflies
-    float weight_color = exp(-dist2 / (abs(color_phi) + dist2));
+    float weight_color = min(exp(-dist2 / (color_phi * color_phi)), 1.0f);
 
     glm::vec3 q_normal = gbuffer[q_idx].normal;
     diff = q_normal - p_normal;
     dist2 = dot(diff, diff);
     //dist2 = glm::max(glm::dot(diff, diff) / (stepwidth * stepwidth), 0.0f);
-    float weight_normal = min(exp(-dist2 / abs(normal_phi)), 1.0f);
+    float weight_normal = min(exp(-dist2 / normal_phi * normal_phi), 1.0f);
 
     glm::vec3 q_pos = gbuffer[q_idx].pos;
     diff = q_pos - p_pos;
     dist2 = dot(diff, diff);
-    float weight_pos = min(exp(-dist2 / abs(pos_phi)), 1.0f);
+    float weight_pos = min(exp(-dist2 / pos_phi * pos_phi), 1.0f);
 
     // total weight
     float weight = weight_color * weight_normal * weight_pos;
