@@ -73,6 +73,9 @@ set(headers
     src/sceneStructs.h
     src/preview.h
     src/utilities.h
+
+     external/include/json.hpp
+     external/include/tiny_gltf.h 
     )
 
 set(sources
@@ -110,6 +113,7 @@ source_group(Headers FILES ${headers})
 source_group(Sources FILES ${sources})
 source_group(imgui FILES ${imgui})
 
+#add_subdirectory(src/ImGui)
 #add_subdirectory(stream_compaction)  # TODO: uncomment if using your stream compaction
 
 cuda_add_executable(${CMAKE_PROJECT_NAME} ${sources} ${headers} ${imgui})

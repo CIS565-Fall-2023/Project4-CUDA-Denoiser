@@ -196,7 +196,7 @@ void drawGui(int windowWidth, int windowHeight) {
     ImGui::NewFrame();
 
     // Dear imgui define
-    ImVec2 minSize(300.f, 220.f);
+    ImVec2 minSize(350.f, 220.f);
     ImVec2 maxSize((float)windowWidth * 0.5, (float)windowHeight * 0.3);
     ImGui::SetNextWindowSizeConstraints(minSize, maxSize);
 
@@ -214,14 +214,23 @@ void drawGui(int windowWidth, int windowHeight) {
 
     ImGui::Checkbox("Denoise", &ui_denoise);
 
-    ImGui::SliderInt("Filter Size", &ui_filterSize, 0, 100);
-    ImGui::SliderFloat("Color Weight", &ui_colorWeight, 0.0f, 10.0f);
-    ImGui::SliderFloat("Normal Weight", &ui_normalWeight, 0.0f, 10.0f);
-    ImGui::SliderFloat("Position Weight", &ui_positionWeight, 0.0f, 10.0f);
+    ImGui::SliderInt("Filter Size", &ui_filterSize, 0, 2500);
+    std::string noOfIters = "No. of Iters based on Filter Size: " + std::to_string(ilog2(ui_filterSize) - 1);
+    ImGui::Text(noOfIters.c_str());
+    ImGui::SliderFloat("Color Weight", &ui_colorWeight, 0.0f, 1.0f);
+    ImGui::SliderFloat("Normal Weight", &ui_normalWeight, 0.0f, 1.0f);
+    ImGui::SliderFloat("Position Weight", &ui_positionWeight, 0.0f, 1.0f);
 
     ImGui::Separator();
 
     ImGui::Checkbox("Show GBuffer", &ui_showGbuffer);
+    
+    const char* GBufStrings[] = {
+#define X(Enum) #Enum,
+    GBUFFERS_ENUM_VALUES(X)
+#undef X
+    };    
+    ImGui::Combo("GBuffer Type", &ui_gBufSelection, GBufStrings, IM_ARRAYSIZE(GBufStrings));
 
     ImGui::Separator();
 
