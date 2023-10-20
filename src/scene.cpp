@@ -331,7 +331,7 @@ void Scene::UpdateNodeBounds(int nodeIdx) {
 
 void Scene::Subdivide(int nodeIdx) {
     // terminate recursion
-    BVHNode& node = bvhNode[nodeIdx];
+    BVHNode node = bvhNode[nodeIdx];
     if (node.triCount <= 2) {       
         return;
     }

@@ -20,7 +20,7 @@ EMITTANCE   0
 
 // Diffuse red
 MATERIAL 2
-RGB         .85 .35 .35
+RGB         .85 .85 .45
 SPECEX      0
 SPECRGB     0 0 0
 REFL        0
@@ -30,7 +30,7 @@ EMITTANCE   0
 
 // Diffuse green
 MATERIAL 3
-RGB         .35 .85 .35
+RGB         .35 .85 .85
 SPECEX      0
 SPECRGB     0 0 0
 REFL        0
@@ -113,6 +113,6 @@ OBJECT 6
 mesh
 ../scenes/bunny.obj
 material 1
-TRANS       -1 4 0
+TRANS       -1 2 0
 ROTAT       0 0 0
-SCALE       10 10 10
+SCALE       30 30 30
