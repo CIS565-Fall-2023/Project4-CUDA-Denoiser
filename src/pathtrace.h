@@ -11,4 +11,4 @@ void showImage(uchar4 *pbo, int iter);
 
 void initDenoiser();
 void denoiserFree();
-void denoiser(glm::ivec2 resolution, int iter);
+void denoiser(uchar4* pbo, int iter);

@@ -86,13 +86,29 @@ __global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* g
             buffer = glm::abs(gBuffer[index].normal);
         }
         else {
-            buffer = glm::abs(gBuffer[index].pos) / static_cast<float>(iter);
+            buffer = gBuffer[index].t > 0 ? glm::abs(gBuffer[index].pos) / static_cast<float>(iter) : glm::vec3(0.f);
         }
         
         pbo[index].w = 0;
         pbo[index].x = buffer.x * 255.0;
         pbo[index].y = buffer.y * 255.0;
         pbo[index].z = buffer.z * 255.0;
+    }
+}
+
+__global__ void generateGBuffer(
+    int num_paths,
+    ShadeableIntersection* shadeableIntersections,
+    PathSegment* pathSegments,
+    GBufferPixel* gBuffer, Camera cam) {
+    int idx = (blockIdx.x * blockDim.x) + threadIdx.x;
+
+    if (idx < num_paths)
+    {
+        gBuffer[idx].t = shadeableIntersections[idx].t;
+
+        gBuffer[idx].normal = shadeableIntersections[idx].surfaceNormal;
+        gBuffer[idx].pos = getWorldPos(pathSegments[idx].ray, shadeableIntersections[idx].t);
     }
 }
 
@@ -285,27 +301,6 @@ __global__ void shadeSimpleMaterials (
   }
 }
 
-__global__ void generateGBuffer (
-  int num_paths,
-  ShadeableIntersection* shadeableIntersections,
-  PathSegment* pathSegments,
-  GBufferPixel* gBuffer, Camera cam) {
-  int idx = blockIdx.x * blockDim.x + threadIdx.x;
-  if (idx < num_paths)
-  {
-    gBuffer[idx].t = shadeableIntersections[idx].t;
-    
-    if (shadeableIntersections[idx].t == -1) {
-        gBuffer[idx].normal += glm::vec3(0.f);
-        gBuffer[idx].pos += glm::vec3(0.f);
-    }
-    else {
-        gBuffer[idx].normal += shadeableIntersections[idx].surfaceNormal;
-        gBuffer[idx].pos += getWorldPos(pathSegments[idx].ray, shadeableIntersections[idx].t);
-    }
-  }
-}
-
 // Add the current iteration's output to the overall image
 __global__ void finalGather(int nPaths, glm::vec3 * image, PathSegment * iterationPaths)
 {
@@ -316,49 +311,6 @@ __global__ void finalGather(int nPaths, glm::vec3 * image, PathSegment * iterati
 		PathSegment iterationPath = iterationPaths[index];
 		image[iterationPath.pixelIndex] += iterationPath.color;
 	}
-}
-
-// Apply Edge-Avoiding A-Trous Wavelet Denoiser
-void denoiser(glm::ivec2 resolution, int iter ) {
-    // 2D block for generating ray from camera
-    int pixelcount = resolution.x * resolution.y;
-
-    initDenoiser();
-    cudaMalloc(&dev_denoised_curr_image, pixelcount * sizeof(glm::vec3));
-    cudaMemcpy(dev_denoised_curr_image, dev_image, pixelcount * sizeof(glm::vec3),
-        cudaMemcpyDeviceToDevice);
-
-    cudaMalloc(&dev_denoised_next_image, pixelcount * sizeof(glm::vec3));
-
-    const dim3 blockSize2d(8, 8);
-    const dim3 blocksPerGrid2d(
-        (resolution.x + blockSize2d.x - 1) / blockSize2d.x,
-        (resolution.y + blockSize2d.y - 1) / blockSize2d.y);
-
-    for (int i = 0; i < hst_scene->state.filterSize; ++i) {
-        size_t stepwidth = static_cast<size_t>(1) << i;
-
-        denoiserKernel << <blocksPerGrid2d, blockSize2d >> > (
-            dev_denoised_curr_image,
-            dev_denoised_next_image,
-            dev_gBuffer,
-            resolution,
-            stepwidth,
-            hst_scene->state.c_phi,
-            hst_scene->state.n_phi,
-            hst_scene->state.p_phi,
-            iter
-            );
-        checkCUDAError("Denoiser Failed!");
-
-        std::swap(dev_denoised_curr_image, dev_denoised_next_image);
-    }
-    cudaDeviceSynchronize();
-
-    cudaMemcpy(dev_image, dev_denoised_curr_image, pixelcount * sizeof(glm::vec3),
-        cudaMemcpyDeviceToDevice);
-    
-    denoiserFree();
 }
 
 /**
@@ -466,10 +418,6 @@ void pathtrace(int frame, int iter) {
     dim3 numBlocksPixels = (pixelcount + blockSize1d - 1) / blockSize1d;
 	finalGather<<<numBlocksPixels, blockSize1d>>>(pixelcount, dev_image, dev_paths);
 
-    if (hst_scene->state.denoise) {
-        denoiser(cam.resolution, iter);
-    }
-
     ///////////////////////////////////////////////////////////////////////////
 
     // CHECKITOUT: use dev_image as reference if you want to implement saving denoised images.
@@ -504,3 +452,47 @@ void showImage(uchar4* pbo, int iter) {
     // Send results to OpenGL buffer for rendering
     sendImageToPBO<<<blocksPerGrid2d, blockSize2d>>>(pbo, cam.resolution, iter, dev_image);
 }
+
+// Apply Edge-Avoiding A-Trous Wavelet Denoiser
+void denoiser(uchar4* pbo, int iter) {
+    // 2D block for generating ray from camera
+    const Camera& cam = hst_scene->state.camera;
+    int pixelcount = cam.resolution.x * cam.resolution.y;
+
+    const dim3 blockSize2d(8, 8);
+    const dim3 blocksPerGrid2d(
+        (cam.resolution.x + blockSize2d.x - 1) / blockSize2d.x,
+        (cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
+
+    initDenoiser();
+    cudaMalloc(&dev_denoised_curr_image, pixelcount * sizeof(glm::vec3));
+    cudaMemcpy(dev_denoised_curr_image, dev_image, pixelcount * sizeof(glm::vec3),
+        cudaMemcpyDeviceToDevice);
+
+    cudaMalloc(&dev_denoised_next_image, pixelcount * sizeof(glm::vec3));
+    cudaMemset(dev_denoised_next_image, 0, pixelcount * sizeof(glm::vec3));
+
+    for (int i = 0; i <= hst_scene->state.filterSize; ++i) {
+        size_t stepwidth = 1 << i;
+
+        denoiserKernel << <blocksPerGrid2d, blockSize2d >> > (
+            dev_denoised_curr_image,
+            dev_denoised_next_image,
+            dev_gBuffer,
+            cam.resolution,
+            stepwidth,
+            hst_scene->state.c_phi,
+            hst_scene->state.n_phi,
+            hst_scene->state.p_phi,
+            iter
+            );
+        checkCUDAError("Denoiser Failed!");
+
+        std::swap(dev_denoised_curr_image, dev_denoised_next_image);
+    }
+    cudaDeviceSynchronize();
+
+    sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, iter, dev_denoised_curr_image);
+    denoiserFree();
+}
+

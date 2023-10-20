@@ -171,7 +171,11 @@ void runCuda() {
 
     if (ui_showGbuffer || ui_showGbufferNormal || ui_showGbufferPos) {
       showGBuffer(pbo_dptr, iteration, ui_showGbuffer, ui_showGbufferNormal);
-    } else {
+    }
+    else if (ui_denoise) {
+        denoiser(pbo_dptr, iteration);
+    }
+    else {
       showImage(pbo_dptr, iteration);
     }
 
@@ -181,6 +185,7 @@ void runCuda() {
     if (ui_saveAndExit) {
         saveImage();
         pathtraceFree();
+        denoiserFree();
         cudaDeviceReset();
         exit(EXIT_SUCCESS);
     }
