@@ -11,8 +11,27 @@
 
 #define PI                3.1415926535897932384626422832795028841971f
 #define TWO_PI            6.2831853071795864769252867665590057683943f
+#define INV_PI            0.31830988618f
 #define SQRT_OF_ONE_THIRD 0.5773502691896257645091487805019574556476f
 #define EPSILON           0.00001f
+
+class GuiDataContainer
+{
+public:
+    GuiDataContainer() : TracedDepth(0) {}
+    int TracedDepth;
+    float lensRadius = 0.00f;
+    float focusLength = 1.f;
+
+    int ui_iterations = 100;
+    bool ui_denoise = false;
+    int ui_filterSize = 1;
+    float ui_colorWeight = 0.f;
+    float ui_normalWeight = 0.f;
+    float ui_positionWeight = 0.f;
+    bool ui_showGbuffer = false;
+    bool ui_save = false;
+};
 
 namespace utilityCore {
     extern float clamp(float f, float min, float max);
