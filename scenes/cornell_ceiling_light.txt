@@ -54,7 +54,7 @@ RGB         .98 .98 .98
 METALLIC    0
 ROUGHNESS   0.3
 IOR         1.5
-OPACITY     0
+OPACITY     1
 EMITTANCE   0
 
 // Ceiling light
