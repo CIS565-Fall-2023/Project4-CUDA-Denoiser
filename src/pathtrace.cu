@@ -4,6 +4,7 @@
 #include <thrust/execution_policy.h>
 #include <thrust/random.h>
 #include <thrust/remove.h>
+#include <chrono>
 
 #include "sceneStructs.h"
 #include "scene.h"
@@ -505,7 +506,8 @@ __global__ void aTrousOneIter(glm::vec3* buffer_in,  // smoothed image from last
     glm::vec3 q_rt = buffer_in[q_idx];
     glm::vec3 diff = q_rt - p_rt;
     float dist2 = dot(diff, diff);
-    float weight_color = min(exp(-dist2 / abs(color_phi)), 1.0f);
+    // modified to counter fireflies
+    float weight_color = exp(-dist2 / (abs(color_phi) + dist2));
 
     glm::vec3 q_normal = gbuffer[q_idx].normal;
     diff = q_normal - p_normal;
@@ -579,6 +581,9 @@ void denoise(float color_phi, float normal_phi, float pos_phi, int filter_size) 
   cudaMemcpy(dev_smooth_buffer, dev_image, pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToDevice);
   //cudaMemset(dev_wavelet_coefficients, 0, pixelcount * sizeof(glm::vec3));
 
+  // record start time
+  auto start = std::chrono::high_resolution_clock::now();
+
   // repeatedly call kernel
   for (int iter = 0; (1 << iter) * 4 + 1 <= filter_size; iter++) {
     // calculate stepwidth
@@ -596,4 +601,11 @@ void denoise(float color_phi, float normal_phi, float pos_phi, int filter_size) 
     std::swap(dev_smooth_buffer, dev_smooth_buffer_pong);
   }
   cudaDeviceSynchronize();
+
+  // record end time
+  auto end = std::chrono::high_resolution_clock::now();
+  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+  std::cout << "Denoising took " << duration << " microseconds to execute.\n";
+
+  cudaMemcpy(hst_scene->state.image.data(), dev_smooth_buffer, pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
 }
