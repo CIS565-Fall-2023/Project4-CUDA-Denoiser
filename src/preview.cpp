@@ -210,12 +210,19 @@ void RenderImGui()
 	//ImGui::Checkbox("Demo Window", &show_demo_window);      // Edit bools storing our window open/close state
 	//ImGui::Checkbox("Another Window", &show_another_window);
 	int renderBufferTypeNum = getRenderBufferType();
-	const char* splineTypes[] = { "Pathtrace", "Normal", "Position"};
+	const char* renderBufferTypes[] = { "Pathtrace", "Normal", "Position", "Denoised"};
 
 	// Set spline type
-	ImGui::Combo("Type", &renderBufferTypeNum, splineTypes, IM_ARRAYSIZE(splineTypes));
+	ImGui::Combo("Type", &renderBufferTypeNum, renderBufferTypes, IM_ARRAYSIZE(renderBufferTypes));
 	setRenderBufferType((RenderBufferType)renderBufferTypeNum);
 
+	ImGui::Text("\nDenoise Parameters");
+	auto denoiseInfo = getDenoiseInfo();
+	ImGui::SliderInt("Denoise Filter Size", &(denoiseInfo->filter_size), 10, 40);
+	ImGui::SliderFloat("Color Weight", &(denoiseInfo->c_weight), 0.0f, 1.0f);
+	ImGui::SliderFloat("Normal Weight", &(denoiseInfo->n_weight), 0.0f, 1.0f);
+	ImGui::SliderFloat("Position Weight", &(denoiseInfo->p_weight), 0.0f, 1.0f);
+	ImGui::Text("\nDepth of Field");
 	if (ImGui::SliderFloat("Depth of Field", &scene_config->state.camera.focalDistance, 3.0f, 10.0f)) {
 		setCameraChanged(true);
 	}

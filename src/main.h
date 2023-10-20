@@ -41,3 +41,5 @@ void setCameraChanged(bool val);
 void setRenderBufferType(RenderBufferType type);
 int getRenderBufferType();
 
+DenoiseInfo* getDenoiseInfo();
+void setDenoiseInfo(DenoiseInfo& info);

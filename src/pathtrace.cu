@@ -106,7 +106,9 @@ static GuiDataContainer* guiData = NULL;
 static glm::vec3* dev_image = NULL;
 static glm::vec3* dev_normal = nullptr;
 static glm::vec3* dev_position = nullptr;
-static glm::vec3* dev_pathtrace = nullptr;
+static glm::vec3* dev_color = nullptr;
+static glm::vec3* dev_denoised_front= nullptr;
+static glm::vec3* dev_denoised_back = nullptr;
 static PathSegment* dev_paths = NULL;
 static ShadeableIntersection* dev_intersections = NULL;
 static Triangle* dev_triangles= nullptr;
@@ -116,7 +118,7 @@ static DevScene* scene;
 //static Scene* hst_scene = new Scene("..\\scenes\\pathtracer_empty_room.glb");
 
 //static Scene* hst_scene = new Scene("..\\scenes\\pathtracer_mis_demo.glb");
-static Scene * hst_scene = new Scene("..\\scenes\\pathtracer_robots_demo.glb");
+static Scene * hst_scene = new Scene("..\\scenes\\pathtracer_bunny_mis.glb");
 static BSDFStruct * dev_bsdfStructs = nullptr;
 static BVHAccel * bvh = nullptr;
 static BVHNode* dev_bvhNodes = nullptr;
@@ -256,8 +258,12 @@ void pathtraceInit(SceneConfig* hst_scene) {
 	cudaMemset(dev_normal, 0, pixelcount * sizeof(glm::vec3));
 	cudaMalloc(&dev_position, pixelcount * sizeof(glm::vec3));
 	cudaMemset(dev_position, 0, pixelcount * sizeof(glm::vec3));
-	cudaMalloc(&dev_pathtrace, pixelcount * sizeof(glm::vec3));
-	cudaMemset(dev_pathtrace, 0, pixelcount * sizeof(glm::vec3));
+	cudaMalloc(&dev_color, pixelcount * sizeof(glm::vec3));
+	cudaMemset(dev_color, 0, pixelcount * sizeof(glm::vec3));
+	cudaMalloc(&dev_denoised_back, pixelcount * sizeof(glm::vec3));
+	cudaMemset(dev_denoised_back, 0, pixelcount * sizeof(glm::vec3));
+	cudaMalloc(&dev_denoised_front, pixelcount * sizeof(glm::vec3));
+	cudaMemset(dev_denoised_front, 0, pixelcount * sizeof(glm::vec3));
 
 	cudaMalloc(&dev_paths, pixelcount * sizeof(PathSegment));
 
@@ -283,6 +289,11 @@ void pathtraceFree() {
 	cudaFree(dev_image);  // no-op if dev_image is null
 	cudaFree(dev_paths);
 	cudaFree(dev_intersections);
+	cudaFree(dev_color);
+	cudaFree(dev_normal);
+	cudaFree(dev_position);
+	cudaFree(dev_denoised_back);
+	cudaFree(dev_denoised_front);
 	// TODO: clean up any extra device memory you created
 	//cudaFree(dev_triangles);
 	//cudaFree(dev_bsdfStructs);
@@ -634,6 +645,55 @@ __global__ void sampleScreen(glm::vec3 * dev_image, Texture & texture, int image
 	}
 }
 
+
+// adapted from slides code
+__global__ void applyDenoiseFilter(glm::ivec2 resolution, glm::vec3* color_in, glm::vec3* color_out,
+	glm::vec3 * normals, glm::vec3* positions, float c_phi, float n_phi, float p_phi, float stepwidth, int iter) {
+	int index_x = blockIdx.x * blockDim.x + threadIdx.x;
+	int index_y = blockIdx.y * blockDim.y + threadIdx.y;
+
+	if (index_x < resolution.x && index_y < resolution.y) {
+		int index = index_y * resolution.x + index_x;
+		glm::vec3 sum = glm::vec3(0.0f);
+		glm::vec3 kernel = glm::vec3(0.375f, 0.25f, 0.0625f);
+
+		glm::vec3 cval = color_in[index];
+		glm::vec3 nval = normals[index] / (float)iter;
+		glm::vec3 pval = positions[index] / (float)iter;
+
+		float cum_w = 0.f;
+
+		for (int i = -2; i <= 2; i++) {
+			for (int j = -2; j <= 2; j++) {
+				glm::ivec2 uv = glm::clamp(glm::ivec2(index_x + j * stepwidth, index_y + i * stepwidth), glm::ivec2(0, 0), resolution);
+				int index_uv = uv.x + uv.y * resolution.x;
+				glm::vec3 ctmp = glm::max(color_in[index_uv], glm::vec3(0.0f));
+				glm::vec3 t = cval - ctmp;
+				float dist2 = glm::dot(t, t);
+				float c_w = min(exp(-dist2 / c_phi), 1.f);
+
+				glm::vec3 ntmp = normals[index_uv] / (float)iter;
+				t = nval - ntmp;
+				dist2 = max(glm::dot(t, t) / (stepwidth * stepwidth), 0.f);
+				float n_w = min(exp(-dist2 / n_phi), 1.f);
+
+				glm::vec3 ptmp = positions[index_uv] / (float) iter;
+				t = pval - ptmp;
+				dist2 = glm::dot(t, t);
+				float p_w = min(exp(-dist2 / p_phi), 1.f);
+
+				float weight = c_w * n_w * p_w;
+
+				float kernel2D = kernel[abs(i)] * kernel[abs(j)];
+
+				sum += ctmp * weight * kernel2D;
+				cum_w += weight * kernel2D;
+			}
+		}
+		color_out[index_y * resolution.x + index_x] = sum / cum_w;
+	}
+}
+
 struct HasHit{
     __host__ __device__ bool operator()(const PathSegment & path) const {
         return path.remainingBounces != 0;
@@ -644,7 +704,7 @@ struct HasHit{
  * Wrapper for the __global__ call that sets up the kernel calls and does a ton
  * of memory management
  */
-void pathtrace(uchar4* pbo, int frame, int iter, RenderBufferType renderBufferType) {
+void pathtrace(uchar4* pbo, int frame, int iter, RenderBufferType renderBufferType, DenoiseInfo & denoiseInfo) {
 	checkCUDAError("before generate camera ray");
 
 	const int traceDepth = scene_config->state.traceDepth;
@@ -799,12 +859,28 @@ void pathtrace(uchar4* pbo, int frame, int iter, RenderBufferType renderBufferTy
 	dim3 numBlocksPixels = (pixelcount + blockSize1d - 1) / blockSize1d;
 	// dim3 numBlocksPixels = (num_paths + blockSize1d - 1) / blockSize1d;
 	cudaMemset(dev_image, 0, pixelcount * sizeof(glm::vec3)); // clear image
-	finalGather << <numBlocksPixels, blockSize1d >> > (pixelcount, dev_pathtrace, dev_normal, dev_position, dev_paths);
-	glm::vec3* buffer = dev_pathtrace;
+	finalGather << <numBlocksPixels, blockSize1d >> > (pixelcount, dev_color, dev_normal, dev_position, dev_paths);
+	glm::vec3* buffer = dev_color;
+
+	copyBuffer << <blocksPerGrid2d, blockSize2d >> > (cam.resolution, dev_denoised_back, dev_color, iter);
+	//copyBuffer << <blocksPerGrid2d, blockSize2d >> > (cam.resolution, dev_denoised_front, dev_color, iter);
+	//printf("denoiseInfo: %d %f %f %f\n", denoiseInfo.filter_size, denoiseInfo.c_weight, denoiseInfo.n_weight, denoiseInfo.p_weight);
+	int atrou_iter = glm::floor(log2((denoiseInfo.filter_size - 5) / 4.f)) + 1;
+	for (int i = 0; i < atrou_iter; i++) {
+
+		float stepwidth = 1 << i;
+		applyDenoiseFilter << < blocksPerGrid2d, blockSize2d >> > (cam.resolution,
+			dev_denoised_back, dev_denoised_front, dev_normal, dev_position, 
+			denoiseInfo.c_weight * denoiseInfo.c_weight, 
+			denoiseInfo.n_weight * denoiseInfo.n_weight, 
+			denoiseInfo.p_weight * denoiseInfo.p_weight, stepwidth, iter);
+		std::swap(dev_denoised_front, dev_denoised_back);
+	}
+
 	switch (renderBufferType)
 	{
 	case COLOR:
-		buffer = dev_pathtrace;
+		buffer = dev_color;
 		break;
 	case NORMAL:
 		buffer = dev_normal;
@@ -812,14 +888,20 @@ void pathtrace(uchar4* pbo, int frame, int iter, RenderBufferType renderBufferTy
 	case POSITION:
 		buffer = dev_position;
 		break;
-	case DEPTH:
-		assert(0);
+	case DENOISED:
+		buffer = dev_denoised_back;
 		break;
 	default:
 		assert(0);
 		break;
 	}
-	copyBuffer << <blocksPerGrid2d, blockSize2d >> > (cam.resolution, dev_image, buffer, iter);
+
+	if (renderBufferType != DENOISED) {
+		copyBuffer << <blocksPerGrid2d, blockSize2d >> > (cam.resolution, dev_image, buffer, iter);
+	}
+	else {
+		cudaMemcpy(dev_image, buffer, pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToDevice);
+	}
 	///////////////////////////////////////////////////////////////////////////
 	//int imageWidth = scene_config->state.camera.resolution.x;
 	//int imageHeight = scene_config->state.camera.resolution.y;

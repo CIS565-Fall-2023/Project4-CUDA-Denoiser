@@ -24,6 +24,7 @@ GuiDataContainer* guiData;
 RenderState* renderState;
 int iteration;
 RenderBufferType renderBufferType = RenderBufferType::COLOR;
+DenoiseInfo denoiseInfo;
 
 int width;
 int height;
@@ -148,7 +149,7 @@ void runCuda() {
 		
 		// execute the kernel
 		int frame = 0;
-		pathtrace(pbo_dptr, frame, iteration, renderBufferType);
+		pathtrace(pbo_dptr, frame, iteration, renderBufferType, denoiseInfo);
 
 		// unmap buffer object
 		cudaGLUnmapBufferObject(pbo);
@@ -204,6 +205,14 @@ void setRenderBufferType(RenderBufferType type)
 int getRenderBufferType()
 {
 	return renderBufferType;
+}
+
+DenoiseInfo * getDenoiseInfo() {
+	return &denoiseInfo;
+}
+
+void setDenoiseInfo(DenoiseInfo & info) {
+	denoiseInfo = info;
 }
 
 void mousePositionCallback(GLFWwindow* window, double xpos, double ypos) {
