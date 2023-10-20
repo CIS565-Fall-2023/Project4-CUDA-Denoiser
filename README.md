@@ -15,6 +15,8 @@ CUDA Denoiser For CUDA Path Tracer
 
 This is a CUDA implementation of the paper ["Edge-Avoiding A-Trous Wavelet Transform for fast Global Illumination Filtering"](https://jo.dreggn.org/home/2010_atrous.pdf), which describes a fast-approximation for a Gaussian-blur based denoiser for noisy path traced images coupled with an edge-avouding solution. This denoiser helps significantly reduce render times by reducing the overall samples per pixel required to get a denoised render that looks comparable to a render that would require many more samples per pixel to look similar.
 
+This project is an extension of my [CUDA Path Tracer](https://github.com/utkarshdwivedi3997/CIS-565-Project3-CUDA-Path-Tracer).
+
 ## Process
 
 ### 1. Generate noisy path-traced result
@@ -59,6 +61,37 @@ Finally, we apply an edge stopping function that uses the position, normal from 
 |Original 100 samples per pixel|Denoised|
 
 ## Performance and Quality Analysis
+
+### Denoise time compared to path-tracing time
+
+This comparison was done using a filter size of 65x65 (5 denoiser iterations) on the cornell box scene with a specular sphere, by varying the samples per pixel taken during path tracing.
+
+<img src="img/denoisePTCompaison.png">
+
+Since the denoising happens only once at the end of the path-tracing, it does not have a significant cost if used. Since at least 5 samples are required to get a good result anyway, we can use the denoiser without much worry about its performance cost, as that is definitely not the bottleneck.
+
+### Denoise time at different resolutions
+
+This comparison was done using a filter size of 65x65 (5 denoiser iterations) on the cornell box scene with a specular sphere, with increasing image resolution.
+
+<img src="img/imageResDenoiseTime.png">
+
+The time to denoise images with exponentially growing scales also scales exponentially. With that said, when compared to the time taken to path-trace an acceptable image, the denoise time is insignificant, as the path-tracing time is what scales up exponentially as well.
+
+### Denoise time with varying filter sizes
+
+This comparison was done using varying filter sizes on the cornell box scene with a specular sphere, with a constant image resolution of 800x800 pixels.
+
+<img src="img/filterSizeDenoiseTime.png">
+
+The time taken to denoise with exponentially increasing filter sizes scales linearly only, since exponentially increasing filter sizes only scale the denoiser iterations linearly (by 1 with each power of 2 filter size). This means that the filter size is not too much of a concern and will not be the primary bottleneck in path-tracing.
+
+
+how denoising influences the number of iterations needed to get an "acceptably smooth" result
+
+how visual results vary with filter size -- does the visual quality scale uniformly with filter size?
+how effective/ineffective is this method with different material types
+how do results compare across different scenes - for example, between cornell.txt and cornell_ceiling_light.txt. Does one scene produce better denoised results? Why or why not?
 
 ## References
 

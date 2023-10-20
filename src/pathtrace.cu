@@ -45,6 +45,12 @@ void checkCUDAErrorFn(const char* msg, const char* file, int line) {
 }
 
 #pragma region HELPERS
+PerformanceTimer& timer()
+{
+	static PerformanceTimer timer;
+	return timer;
+}
+
 __host__ __device__
 thrust::default_random_engine makeSeededRandomEngine(int iter, int index, int depth) {
 	int h = utilhash((1 << 31) | (depth << 22) | iter) ^ utilhash(index);
@@ -611,6 +617,11 @@ __global__ void denoise(const glm::vec3* readFrameBuffer, glm::vec3* writeFrameB
  * of memory management
  */
 void pathtrace(int frame, int iter, const DenoiserParameters& denoiserParams) {
+
+	if (iter == 1)
+	{
+		timer().startGpuTimer();
+	}
     const int traceDepth = hst_scene->state.traceDepth;
     const Camera &cam = hst_scene->state.camera;
     const int pixelcount = cam.resolution.x * cam.resolution.y;
@@ -769,11 +780,18 @@ void pathtrace(int frame, int iter, const DenoiserParameters& denoiserParams) {
 	dim3 numBlocksPixels = (pixelcount + blockSize1d - 1) / blockSize1d;
 	finalGather << <numBlocksPixels, blockSize1d >> > (pixelcount, iter, dev_image, dev_paths);
 
+	if (iter == denoiserParams.maxIters)
+	{
+		timer().endGpuTimer();
+		float t = timer().getGpuElapsedTimeForPreviousOperation();
+		cout << "RT time:" << t << endl;
+	}
 
 	if (denoiserParams.denoiseIters > 0 &&
 		((denoiserParams.mode == DenoiseMode::DENOISE_AFTER_PATHTRACING && iter == denoiserParams.maxIters) ||
 			(denoiserParams.mode == DenoiseMode::DENOISE_AT_EVERY_ITERATION)))
 	{
+		timer().startGpuTimer();
 		for (int i = 0; i < denoiserParams.denoiseIters; i++)
 		{
 			int stepWidth = 1 << i;
@@ -785,6 +803,9 @@ void pathtrace(int frame, int iter, const DenoiserParameters& denoiserParams) {
 		{
 			std::swap(dev_imageRead, dev_image);
 		}
+		timer().endGpuTimer();
+		float t = timer().getGpuElapsedTimeForPreviousOperation();
+		cout << "Denoise time: " << t << endl;
 	}
 	///////////////////////////////////////////////////////////////////////////
 
