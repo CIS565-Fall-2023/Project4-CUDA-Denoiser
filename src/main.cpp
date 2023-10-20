@@ -24,7 +24,7 @@ int startupIterations = 0;
 int lastLoopIterations = 0;
 bool ui_showGbuffer = false;
 bool ui_denoise = false;
-int ui_filterSize = 80;
+int ui_filterSize = 5;
 float ui_colorWeight = 0.45f;
 float ui_normalWeight = 0.35f;
 float ui_positionWeight = 0.2f;
@@ -167,6 +167,9 @@ void runCuda() {
 
     if (ui_showGbuffer) {
       showGBuffer(pbo_dptr);
+    } else if (ui_denoise) {
+      denoise(ui_colorWeight, ui_normalWeight, ui_positionWeight, ui_filterSize);
+      showDenoisedImage(pbo_dptr, iteration);
     } else {
       showImage(pbo_dptr, iteration);
     }

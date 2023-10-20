@@ -13,6 +13,7 @@
 #include "pathtrace.h"
 #include "intersections.h"
 #include "interactions.h"
+#include "device_launch_parameters.h"
 
 #define ERRORCHECK 1
 
@@ -73,12 +74,11 @@ __global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* g
 
     if (x < resolution.x && y < resolution.y) {
         int index = x + (y * resolution.x);
-        float timeToIntersect = gBuffer[index].t * 256.0;
-
+        glm::vec3 normal = ((0.5f * gBuffer[index].normal) + 0.5f) * 255.f;
         pbo[index].w = 0;
-        pbo[index].x = timeToIntersect;
-        pbo[index].y = timeToIntersect;
-        pbo[index].z = timeToIntersect;
+        pbo[index].x = normal.x;
+        pbo[index].y = normal.y;
+        pbo[index].z = normal.z;
     }
 }
 
@@ -89,6 +89,10 @@ static Material * dev_materials = NULL;
 static PathSegment * dev_paths = NULL;
 static ShadeableIntersection * dev_intersections = NULL;
 static GBufferPixel* dev_gBuffer = NULL;
+static glm::vec3* dev_smooth_buffer = NULL;
+static glm::vec3* dev_smooth_buffer_pong = NULL;
+__constant__ float dev_filter[25];
+
 // TODO: static variables for device memory, any extra info you need, etc
 // ...
 
@@ -114,6 +118,17 @@ void pathtraceInit(Scene *scene) {
     cudaMalloc(&dev_gBuffer, pixelcount * sizeof(GBufferPixel));
 
     // TODO: initialize any extra device memeory you need
+    cudaMalloc(&dev_smooth_buffer, pixelcount * sizeof(glm::vec3));
+    cudaMalloc(&dev_smooth_buffer_pong, pixelcount * sizeof(glm::vec3));
+
+    float b3Spline[] = {
+        0.00390625, 0.015625  , 0.0234375 , 0.015625  , 0.00390625,
+        0.015625  , 0.0625    , 0.09375   , 0.0625    , 0.015625  ,
+        0.0234375 , 0.09375   , 0.140625  , 0.09375   , 0.0234375 ,
+        0.015625  , 0.0625    , 0.09375   , 0.0625    , 0.015625  ,
+        0.00390625, 0.015625  , 0.0234375 , 0.015625  , 0.00390625
+    };
+    cudaMemcpyToSymbol(dev_filter, b3Spline, sizeof(float) * 25);
 
     checkCUDAError("pathtraceInit");
 }
@@ -126,6 +141,8 @@ void pathtraceFree() {
   	cudaFree(dev_intersections);
     cudaFree(dev_gBuffer);
     // TODO: clean up any extra device memory you created
+    cudaFree(dev_smooth_buffer);
+    cudaFree(dev_smooth_buffer_pong);
 
     checkCUDAError("pathtraceFree");
 }
@@ -281,7 +298,8 @@ __global__ void generateGBuffer (
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
   if (idx < num_paths)
   {
-    gBuffer[idx].t = shadeableIntersections[idx].t;
+    gBuffer[idx].normal = shadeableIntersections[idx].surfaceNormal;
+    gBuffer[idx].pos = pathSegments[idx].ray.origin + pathSegments[idx].ray.direction * shadeableIntersections[idx].t;
   }
 }
 
@@ -430,4 +448,152 @@ const Camera &cam = hst_scene->state.camera;
 
     // Send results to OpenGL buffer for rendering
     sendImageToPBO<<<blocksPerGrid2d, blockSize2d>>>(pbo, cam.resolution, iter, dev_image);
+}
+
+void showDenoisedImage(uchar4* pbo, int iter) {
+  const Camera& cam = hst_scene->state.camera;
+  const dim3 blockSize2d(8, 8);
+  const dim3 blocksPerGrid2d(
+    (cam.resolution.x + blockSize2d.x - 1) / blockSize2d.x,
+    (cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
+
+  // Send results to OpenGL buffer for rendering
+  sendImageToPBO<<<blocksPerGrid2d, blockSize2d>>>(pbo, cam.resolution, iter, dev_smooth_buffer);
+}
+
+// apply filter for one iteration
+__global__ void aTrousOneIter(glm::vec3* buffer_in,  // smoothed image from last iter
+                              glm::vec3* buffer_out, // smoothed image to be generated
+                              GBufferPixel* gbuffer, // normals & positions
+                              glm::ivec2 resolution, // image resolution
+                              int stepwidth,         // 2^iter (dist between filter elems)
+                              float color_phi,       // color sigma ^2, etc
+                              float normal_phi,
+                              float pos_phi) {
+  // get the pixel coordinates for this pixel
+  int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+  int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+  glm::ivec2 p(x, y);
+
+  // out-of-bound pixels, end thread
+  if (x >= resolution.x || y >= resolution.y) {
+    return;
+  }
+
+  // index of the pixel in the 1D buffers
+  int p_idx = x + (y * resolution.x);
+
+  // initialize cumulative variables
+  glm::vec3 color_sum(0.0f);
+  float weight_sum = 0.0f;
+
+  // get GBuffer data for this pixel
+  glm::vec3 p_rt = buffer_in[p_idx]; // original rt color of p
+  glm::vec3 p_normal = gbuffer[p_idx].normal;
+  glm::vec3 p_pos = gbuffer[p_idx].pos;
+
+  for (int i = 0; i < 25; i++) {
+    // calculate pixel position for q
+    // stepwidth = 2 ^ iter
+    glm::ivec2 offset(i % 5 - 2, i / 5 - 2);
+    glm::ivec2 q = p + offset * stepwidth;
+    q.x = glm::clamp(q.x, 0, resolution.x - 1);
+    q.y = glm::clamp(q.y, 0, resolution.y - 1);
+    int q_idx = q.x + (q.y * resolution.x);
+
+    // calc individual weights
+    glm::vec3 q_rt = buffer_in[q_idx];
+    glm::vec3 diff = q_rt - p_rt;
+    float dist2 = dot(diff, diff);
+    float weight_color = min(exp(-dist2 / abs(color_phi)), 1.0f);
+
+    glm::vec3 q_normal = gbuffer[q_idx].normal;
+    diff = q_normal - p_normal;
+    dist2 = dot(diff, diff);
+    //dist2 = glm::max(glm::dot(diff, diff) / (stepwidth * stepwidth), 0.0f);
+    float weight_normal = min(exp(-dist2 / abs(normal_phi)), 1.0f);
+
+    glm::vec3 q_pos = gbuffer[q_idx].pos;
+    diff = q_pos - p_pos;
+    dist2 = dot(diff, diff);
+    float weight_pos = min(exp(-dist2 / abs(pos_phi)), 1.0f);
+
+    // total weight
+    float weight = weight_color * weight_normal * weight_pos;
+    glm::vec3 q_color = buffer_in[q_idx];
+    color_sum += q_color * weight * dev_filter[i];
+    weight_sum += weight * dev_filter[i];
+  }
+  buffer_out[p_idx] = color_sum / weight_sum;
+}
+
+__global__ void cumulateWaveletCoefficients(glm::vec3* buffer_old,
+                                            glm::vec3* buffer_new,
+                                            glm::vec3* coefficients,
+                                            glm::ivec2 resolution) {
+  // get the pixel coordinates for this pixel
+  int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+  int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+
+  // out-of-bound pixels, end thread
+  if (x >= resolution.x || y >= resolution.y) {
+    return;
+  }
+
+  // index of the pixel in the 1D buffers
+  int idx = x + (y * resolution.x);
+
+  // accumulate difference in coefficients array
+  coefficients[idx] += buffer_new[idx] - buffer_old[idx];
+}
+
+__global__ void reconstruct(glm::vec3* coefficients,
+                            glm::vec3* buffer,
+                            glm::ivec2 resolution) {
+  // get the pixel coordinates for this pixel
+  int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+  int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+
+  // out-of-bound pixels, end thread
+  if (x >= resolution.x || y >= resolution.y) {
+    return;
+  }
+
+  // index of the pixel in the 1D buffers
+  int idx = x + (y * resolution.x);
+
+  // reconstruct by adding coefficients and final buffer
+  buffer[idx] += coefficients[idx];
+}
+
+void denoise(float color_phi, float normal_phi, float pos_phi, int filter_size) {
+  // count the number of pixels again
+  const Camera& cam = hst_scene->state.camera;
+  const int pixelcount = cam.resolution.x * cam.resolution.y;
+  const dim3 blockSize2d(8, 8);
+  const dim3 blocksPerGrid2d(
+    (cam.resolution.x + blockSize2d.x - 1) / blockSize2d.x,
+    (cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
+
+  // copy raw image to smooth buffer for first iteration
+  cudaMemcpy(dev_smooth_buffer, dev_image, pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToDevice);
+  //cudaMemset(dev_wavelet_coefficients, 0, pixelcount * sizeof(glm::vec3));
+
+  // repeatedly call kernel
+  for (int iter = 0; (1 << iter) * 4 + 1 <= filter_size; iter++) {
+    // calculate stepwidth
+    int stepwidth = 1 << iter;
+    // call kernel
+    aTrousOneIter<<<blocksPerGrid2d, blockSize2d>>>(dev_smooth_buffer,
+                                                    dev_smooth_buffer_pong,
+                                                    dev_gBuffer,
+                                                    cam.resolution,
+                                                    stepwidth,
+                                                    color_phi,
+                                                    normal_phi,
+                                                    pos_phi);
+    // swap buffer for next iteration
+    std::swap(dev_smooth_buffer, dev_smooth_buffer_pong);
+  }
+  cudaDeviceSynchronize();
 }
