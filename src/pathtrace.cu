@@ -353,11 +353,11 @@ __global__ void generateGBuffer (
         gBuffer[idx].pos = getPointOnRay(segment.ray, intersection.t);
       //}
 
-      //else
-      //{
+    //  else
+    //  {
 				//gBuffer[idx].normal = glm::vec3(0.0f);
 				//gBuffer[idx].pos = glm::vec3(0.0f);
-      //}
+    //  }
   }
 }
 
@@ -375,7 +375,6 @@ __global__ void generateGBuffer (
 __global__ void denoise_a_trois(glm::vec3 * image, float depth,
                                 GBufferPixel* gBuffer, 
                                 int stepWidth, glm::vec2 resolution, glm::vec3 * image_output,
-                                float *offset_x, float *offset_y, float *filter,
                                 float color_phi, float normal_phi, float pos_phi)
 {
   int x = (blockIdx.x * blockDim.x) + threadIdx.x;
@@ -391,51 +390,39 @@ __global__ void denoise_a_trois(glm::vec3 * image, float depth,
   glm::vec3 sum_color = glm::vec3(0);
   glm::vec2 pixel = glm::vec2(x, y);
   glm::vec3 color = image[x + y * resolution_x];
-  printf("test3\n");
   GBufferPixel gbufferPixel = gBuffer[x + y * resolution_x];
-  printf("test3.1\n");
   glm::vec3 normal = gbufferPixel.normal;
   glm::vec3 pos = gbufferPixel.pos;
-  printf("test3.2\n");
 
   for (int i = 0; i < PIXEL_NUM; i++)
   {
-    printf("test4\n");
-    glm::vec2 curr_offset = glm::vec2(offset_x[i], offset_y[i]);
-    printf("test4.1\n");
+    glm::vec2 curr_offset = glm::vec2(dev_offset[i].x, dev_offset[i].y);
     glm::vec2 curr_pixel = pixel + curr_offset * (float) stepWidth;
-    printf("test4.2\n");
-    glm::clamp(curr_pixel, glm::vec2(0.0), resolution - glm::vec2(1.0));
-    printf("test4.3\n");
-
+    curr_pixel = glm::clamp(curr_pixel, glm::vec2(0.0), resolution - glm::vec2(1.0));
+    
     int curr_pixel_x = curr_pixel.x;
     int curr_pixel_y = curr_pixel.y;
+    //printf("curr_pixel_x %d curr_pixel_y %d\n", curr_pixel_x, curr_pixel_y);
     glm::vec3 curr_color = image[curr_pixel_x + curr_pixel_y * resolution_x];
-    curr_color /= (float)depth;
-    glm::vec3 color_t = color - curr_color;
+    glm::vec3 color_t = (color - curr_color) / (float)depth;
     float dist_color = glm::dot(color_t, color_t);
     float color_w = glm::min(exp(-(dist_color) / color_phi), 1.0f);
-    printf("test5\n");
 
     glm::vec3 curr_normal = gBuffer[curr_pixel_x + curr_pixel_y * resolution_x].normal;
     glm::vec3 normal_t = normal - curr_normal;
     float dist_normal = glm::dot(normal_t, normal_t);
     float normal_w = glm::min(exp(-(dist_normal) / normal_phi), 1.0f);
-    printf("test6\n");
 
     glm::vec3 curr_pos = gBuffer[curr_pixel_x + curr_pixel_y * resolution_x].pos;
     glm::vec3 pos_t = pos - curr_pos;
     float dist_pos = glm::dot(pos_t, pos_t);  
     float pos_w = glm::min(exp(-(dist_pos) / pos_phi), 1.0f);
-    printf("test7\n");
 
     float weight = color_w * normal_w * pos_w;
-    sum_color += color * weight * filter[i];
-    total_w += weight * filter[i];
-    //printf("test loop\n");
+    sum_color += curr_color * weight * dev_filter[i];
+    total_w += weight * dev_filter[i];
   }
   image_output[x + y * resolution_x] = sum_color / total_w;
-  //printf("test5\n");
 }
 
 /**
@@ -566,7 +553,7 @@ void showGBuffer(uchar4* pbo) {
 void showDenoise(uchar4* pbo, int iteration, int ui_filterSize, float ui_colorWeight, float ui_normalWeight, float ui_positionWeight)
 {
   const Camera& cam = hst_scene->state.camera;
-  const dim3 blockSize2d(8, 8);
+  const dim3 blockSize2d(16, 16);
   const dim3 blocksPerGrid2d(
     (cam.resolution.x + blockSize2d.x - 1) / blockSize2d.x,
     (cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
@@ -574,19 +561,18 @@ void showDenoise(uchar4* pbo, int iteration, int ui_filterSize, float ui_colorWe
   denoise_a_trois << <blocksPerGrid2d, blockSize2d>> > (dev_image, iteration,
     dev_gBuffer, 1,
     cam.resolution, dev_denoise_1,
-    dev_offset_x, dev_offset_y, dev_filter,
     ui_colorWeight, ui_normalWeight, ui_positionWeight);
   checkCUDAError("denoise1");
   //printf("testdenoise 2\n");
 
   // not sure if < or <=
-  for (int i = 1; (1 << i) < (ui_filterSize >> 1); i++)
+  for (int i = 1; i <= ui_filterSize; i++)
   {
     int stepWidth = 1 << i;
+    //printf("stepWidth %d\n", stepWidth);
     denoise_a_trois << <blocksPerGrid2d, blockSize2d >> > (dev_denoise_1, iteration,
       dev_gBuffer, stepWidth,
       cam.resolution, dev_denoise_2,
-      dev_offset_x, dev_offset_y, dev_filter,
       ui_colorWeight, ui_normalWeight, ui_positionWeight);
     std::swap(dev_denoise_1, dev_denoise_2);
     //printf("testdenoise loop %d\n", i);
