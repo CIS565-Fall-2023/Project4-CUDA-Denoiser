@@ -218,7 +218,7 @@ void RenderImGui()
 
 	ImGui::Text("\nDenoise Parameters");
 	auto denoiseInfo = getDenoiseInfo();
-	ImGui::SliderInt("Denoise Filter Size", &(denoiseInfo->filter_size), 10, 40);
+	ImGui::SliderInt("Denoise Filter Size", &(denoiseInfo->filter_size), 10, 90);
 	ImGui::SliderFloat("Color Weight", &(denoiseInfo->c_weight), 0.0f, 1.0f);
 	ImGui::SliderFloat("Normal Weight", &(denoiseInfo->n_weight), 0.0f, 1.0f);
 	ImGui::SliderFloat("Position Weight", &(denoiseInfo->p_weight), 0.0f, 1.0f);

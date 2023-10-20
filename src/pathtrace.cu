@@ -866,6 +866,13 @@ void pathtrace(uchar4* pbo, int frame, int iter, RenderBufferType renderBufferTy
 	//copyBuffer << <blocksPerGrid2d, blockSize2d >> > (cam.resolution, dev_denoised_front, dev_color, iter);
 	//printf("denoiseInfo: %d %f %f %f\n", denoiseInfo.filter_size, denoiseInfo.c_weight, denoiseInfo.n_weight, denoiseInfo.p_weight);
 	int atrou_iter = glm::floor(log2((denoiseInfo.filter_size - 5) / 4.f)) + 1;
+
+	// Create CUDA events for timing
+	cudaEvent_t start, stop;
+	cudaEventCreate(&start);
+	cudaEventCreate(&stop);
+
+	cudaEventRecord(start);
 	for (int i = 0; i < atrou_iter; i++) {
 
 		float stepwidth = 1 << i;
@@ -876,6 +883,12 @@ void pathtrace(uchar4* pbo, int frame, int iter, RenderBufferType renderBufferTy
 			denoiseInfo.p_weight * denoiseInfo.p_weight, stepwidth, iter);
 		std::swap(dev_denoised_front, dev_denoised_back);
 	}
+	cudaEventRecord(stop);
+	cudaEventSynchronize(stop);
+	// Calculate the elapsed time
+	float milliseconds = 0;
+	cudaEventElapsedTime(&milliseconds, start, stop);
+	//std::cout << "Kernel execution time: " << milliseconds << " ms" << std::endl;
 
 	switch (renderBufferType)
 	{
