@@ -83,11 +83,10 @@ __global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBufferPixel* g
             buffer = glm::vec3(gBuffer[index].t);
         }
         else if (showNormal) {
-            // remap the change of normal from [-1, 1] to [0, 1]
-            buffer = (gBuffer[index].normal / static_cast<float>(iter) + 1.0f) / 2.0f;
+            buffer = glm::abs(gBuffer[index].normal);
         }
         else {
-            buffer = gBuffer[index].pos / static_cast<float>(iter);
+            buffer = glm::abs(gBuffer[index].pos) / static_cast<float>(iter);
         }
         
         pbo[index].w = 0;
@@ -295,12 +294,13 @@ __global__ void generateGBuffer (
   if (idx < num_paths)
   {
     gBuffer[idx].t = shadeableIntersections[idx].t;
-    gBuffer[idx].normal += shadeableIntersections[idx].surfaceNormal;
-
+    
     if (shadeableIntersections[idx].t == -1) {
+        gBuffer[idx].normal += glm::vec3(0.f);
         gBuffer[idx].pos += glm::vec3(0.f);
     }
     else {
+        gBuffer[idx].normal += shadeableIntersections[idx].surfaceNormal;
         gBuffer[idx].pos += getWorldPos(pathSegments[idx].ray, shadeableIntersections[idx].t);
     }
   }
