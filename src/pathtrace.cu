@@ -20,9 +20,12 @@
 #include "intersections.h" 
 #include "interactions.h"
 #include "bvh.h"
+#include "cuda_timer.h"
 
 #define ERRORCHECK 1
-#define DEBUG 0
+#define DEBUG_NORM 0
+#define DEBUG_POS 0
+#define DEBUG_BLUR 0
 
 #define FILENAME (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 #define checkCUDAError(msg) checkCUDAErrorFn(msg, FILENAME, __LINE__)
@@ -315,12 +318,6 @@ __global__ void processPBR(
 	if (material.bumpId!=-1) {
 		normal = tangentToWorld(normal) * texture2D(intersect.surfaceUV, textures[material.bumpId]);
 	}
-#if DEBUG
-	seg.color = normal * 0.5f + glm::vec3(0.5);
-	//seg.color = getBSDF(seg.ray.direction, glm::vec3(0.f), intersect.surfaceUV, material, textures);
-	seg.remainingBounces = 0;
-	return;
-#else
 
 	if (material.emittance > 0) // hit light
 	{
@@ -360,7 +357,6 @@ __global__ void processPBR(
 	//           albedo           absdot
 	seg.color *= (bsdf * glm::clamp(abs(glm::dot(normal, seg.ray.direction)), 0.f, 1.f) / pdf);
 	
-#endif //DEBUG
 }
 
 
@@ -430,10 +426,37 @@ __global__ void denoise(
 
 	GBuffer& gval = in_gbuffer[idx];
 	glm::vec3 cval = in_c[idx];
-#if DEBUG
-	out_c[idx] = gval.norm;
+
+#if DEBUG_BLUR
+	for (int i = -2;i <= 2;++i) {
+		for (int j = -2;j <= 2;++j) {
+			int tmpX = x + i * offset;
+			int tmpY = y + j * offset;
+			if (inScreen(tmpX, tmpY, resX, resY)) {
+				int tmpIdx = to1D(tmpX, tmpY, resX, resY);
+				glm::vec3 tmpC = in_c[tmpIdx];
+				float weight = 1.f;
+
+				float kernel = hs[i + 2] * hs[j + 2];
+				sum += tmpC * weight * kernel;
+				weightSum += weight * kernel;
+			}
+		}
+	}
+	out_c[idx] = sum / weightSum;
 	return;
 #endif
+
+#if DEBUG_NORM
+	out_c[idx] = gval.norm * 0.5f + glm::vec3(0.5f);
+	return;
+#endif
+
+#if DEBUG_POS
+	out_c[idx] = gval.pos * 0.2f;
+	return;
+#endif
+
 	for (int i = -2;i <= 2;++i) {
 		for (int j = -2;j <= 2;++j) {
 			int tmpX = x + i * offset;
@@ -465,29 +488,10 @@ __global__ void denoise(
 	out_c[idx] = sum / weightSum;
 }
 
-//__global__ void finalGather(
-//	int resX
-//	, int resY
-//	, float iter
-//	, glm::vec3* in_img
-//	, glm::vec3* out_img
-//){
-//	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
-//	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
-//	if (!inScreen(x, y, resX, resY))return;
-//	int idx = to1D(x, y, resX, resY);
-//	out_img[idx] = glm::mix(out_img[idx], in_img[idx], 1.f / iter);
-//}
-
-
 
 void PathTracer::pathtrace(uchar4* pbo, int frame, int iter)
 {
-#if DEBUG
-	const int traceDepth = 1;
-#else
 	const int traceDepth = hst_scene->state.traceDepth;
-#endif
 
 	const Camera& cam = hst_scene->state.camera;
 
@@ -599,7 +603,7 @@ void PathTracer::pathtrace(uchar4* pbo, int frame, int iter)
 		GBuffer* i_gbuffer = dev_gbuffer.get();
 		//gatherGBufferColor << <numBlocksPixels, blockSize1d >> > (pixelcount, dev_donePaths, o_dColor);
 		cudaMemcpy(o_dColor, dev_image, pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToDevice);
-		for (int i = 0;i < 3;++i) {
+		for (int i = 0;i < m_guiData->ui_filterSize;++i) {
 			int offset = 1 << i;
 			swap(o_dColor, i_dColor);
 			denoise << <blocksPerGrid2d, blockSize2d >> > (cam.resolution.x, cam.resolution.y, i_gbuffer, offset, m_guiData->ui_colorWeight, m_guiData->ui_normalWeight, m_guiData->ui_positionWeight, i_dColor, o_dColor);

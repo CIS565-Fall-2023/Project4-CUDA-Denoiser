@@ -12,6 +12,7 @@
 #include "glslUtility.hpp"
 #include "pathtrace.h"
 #include "image.h"
+#include "cuda_timer.h"
 struct UserInput {
     bool mouseOverGuiWindow;
     // For camera controls
@@ -33,7 +34,9 @@ private:
     std::unique_ptr<Scene> m_scene;
     std::unique_ptr<PathTracer> m_tracer;
     std::unique_ptr<GuiDataContainer> m_guiData;
-    
+    Common::PerformanceTimer m_timer;
+    float m_timeElapsed;
+
     GLuint m_imgId;
     GLuint m_pbo = (GLuint)NULL;
     GLuint m_vertBuff[3] = { (GLuint)NULL,(GLuint)NULL ,(GLuint)NULL };

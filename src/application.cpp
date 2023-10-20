@@ -330,11 +330,11 @@ void Application::renderImGui()
 	
 	ImGui::Separator();
 
-	if (ImGui::SliderInt("Iterations", &m_guiData->ui_iterations, 1, 1000))m_iteration = 0;
+	if (ImGui::SliderInt("Iterations", &m_guiData->ui_iterations, 1, 500))m_iteration = 0;
 	
 	if (ImGui::Checkbox("Denoise", &m_guiData->ui_denoise))m_iteration = 0;
 
-	if (ImGui::SliderInt("Filter Size", &m_guiData->ui_filterSize, 0, 100))m_iteration = 0;
+	if (ImGui::SliderInt("Filter Size", &m_guiData->ui_filterSize, 1, 5))m_iteration = 0;
 	if(ImGui::SliderFloat("Color Weight", &m_guiData->ui_colorWeight, 0.0f, 10.0f))m_iteration = 0;
 	if(ImGui::SliderFloat("Normal Weight", &m_guiData->ui_normalWeight, 0.0f, 10.0f))m_iteration = 0;
 	if (ImGui::SliderFloat("Position Weight", &m_guiData->ui_positionWeight, 0.0f, 10.0f))m_iteration = 0;
@@ -403,19 +403,28 @@ void Application::pathTrace()
 
 	if (m_iteration == 0) {
 		m_tracer.get()->pathtraceInit(m_scene.get());
+		m_timeElapsed = 0;
 	}
 
 	if (m_iteration < m_guiData->ui_iterations) {
+
+		m_timer.startCpuTimer();
+		
 		uchar4* pbo_dptr = NULL;
 		m_iteration++;
 		cudaGLMapBufferObject((void**)&pbo_dptr, m_pbo);
-
 		// execute the kernel
 		int frame = 0;
 		m_tracer.get()->pathtrace(pbo_dptr, frame, m_iteration);
-
 		// unmap buffer object
 		cudaGLUnmapBufferObject(m_pbo);
+		
+		m_timer.endCpuTimer();
+		m_timeElapsed += m_timer.getCpuElapsedTimeForPreviousOperation();
+		if (m_iteration == m_guiData->ui_iterations && m_iteration != 0) {
+			std::string renderType = m_guiData->ui_denoise ? "with denoise" : "without denoise";
+			cout << "Avg time perframe " << renderType << " at " << m_iteration << " iterations: " << (m_timeElapsed / m_iteration) << endl;
+		}
 	}
 	if(m_guiData->ui_save){
 		saveImage(getOutputImageName().c_str());
