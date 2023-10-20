@@ -3,6 +3,10 @@
 #include <cstring>
 #include <unistd.h>
 
+#include "../imgui/imgui.h"
+#include "../imgui/imgui_impl_glfw.h"
+#include "../imgui/imgui_impl_opengl3.h"
+
 static std::string startTimeString;
 
 // For camera controls
@@ -11,6 +15,25 @@ static bool rightMousePressed = false;
 static bool middleMousePressed = false;
 static double lastX;
 static double lastY;
+
+int ui_iterations = 0;
+int startupIterations = 0;
+int lastLoopIterations = 0;
+bool ui_showGbuffer = false;
+
+bool ui_denoise = false;
+int ui_filterSize = 80;
+float ui_colorWeight = 0.45f;
+float ui_normalWeight = 0.35f;
+float ui_positionWeight = 0.2f;
+
+bool ui_denoise_prev = ui_denoise;
+int ui_filterSize_prev = ui_filterSize;
+float ui_colorWeight_prev = ui_colorWeight;
+float ui_normalWeight_prev = ui_normalWeight;
+float ui_positionWeight_prev = ui_positionWeight;
+
+bool ui_saveAndExit = false;
 
 static bool camchanged = true;
 static float dtheta = 0, dphi = 0;
@@ -21,7 +44,7 @@ glm::vec3 cameraPosition;
 glm::vec3 ogLookAt; // for recentering the camera
 
 Scene* scene;
-GuiDataContainer* guiData;
+GuiDataContainer* guiData; // is this needed?
 RenderState* renderState;
 int iteration;
 
@@ -34,6 +57,9 @@ int height;
 
 int main(int argc, char** argv) {
 	startTimeString = currentTimeString();
+
+	// sleep
+	sleep(3);
 
 	if (argc < 2) {
 		printf("Usage: %s SCENEFILE.txt\n", argv[0]);
@@ -55,6 +81,9 @@ int main(int argc, char** argv) {
 	width = cam.resolution.x;
 	height = cam.resolution.y;
 
+	ui_iterations = renderState->iterations;
+    startupIterations = ui_iterations;
+
 	glm::vec3 view = cam.view;
 	glm::vec3 up = cam.up;
 	glm::vec3 right = glm::cross(view, up);
@@ -73,10 +102,6 @@ int main(int argc, char** argv) {
 
 	// Initialize CUDA and GL components
 	init();
-
-	// Initialize ImGui Data
-	InitImguiData(guiData);
-	InitDataContainer(guiData);
 
 	// GLFW main loop
 	mainLoop();
@@ -107,7 +132,29 @@ void saveImage() {
 	//img.saveHDR(filename);  // Save a Radiance HDR file
 }
 
+bool uiStateChanged() {
+	return ui_denoise != ui_denoise_prev ||
+		ui_filterSize != ui_filterSize_prev ||
+		ui_colorWeight != ui_colorWeight_prev ||
+		ui_normalWeight != ui_normalWeight_prev ||
+		ui_positionWeight != ui_positionWeight_prev;
+}
+
 void runCuda() {
+	if (lastLoopIterations != ui_iterations) {
+      lastLoopIterations = ui_iterations;
+      camchanged = true;
+    }
+
+	if (uiStateChanged()) {
+		ui_denoise_prev = ui_denoise;
+		ui_filterSize_prev = ui_filterSize;
+		ui_colorWeight_prev = ui_colorWeight;
+		ui_normalWeight_prev = ui_normalWeight;
+		ui_positionWeight_prev = ui_positionWeight;
+		iteration = 0;
+	}
+
 	if (camchanged) {
 		iteration = 0;
 		Camera& cam = renderState->camera;
@@ -136,24 +183,32 @@ void runCuda() {
 		pathtraceInit(scene);
 	}
 
-	if (iteration < renderState->iterations) {
-		uchar4* pbo_dptr = NULL;
-		iteration++;
-		cudaGLMapBufferObject((void**)&pbo_dptr, pbo);
+	uchar4* pbo_dptr = NULL;
+	cudaGLMapBufferObject((void**)&pbo_dptr, pbo);
 
-		// execute the kernel
-		int frame = 0;
-		pathtrace(pbo_dptr, frame, iteration);
+    if (iteration < ui_iterations) {
+        iteration++;
 
-		// unmap buffer object
-		cudaGLUnmapBufferObject(pbo);
-	}
-	else {
-		saveImage();
-		pathtraceFree();
-		cudaDeviceReset();
-		exit(EXIT_SUCCESS);
-	}
+        // execute the kernel
+        int frame = 0;
+        pathtrace(frame, iteration, ui_denoise, ui_filterSize, ui_colorWeight, ui_normalWeight, ui_positionWeight);
+    }
+
+    if (ui_showGbuffer) {
+      showGBuffer(pbo_dptr);
+    } else {
+      showImage(pbo_dptr, iteration);
+    }
+
+    // unmap buffer object
+    cudaGLUnmapBufferObject(pbo);
+
+    if (ui_saveAndExit) {
+        saveImage();
+        pathtraceFree();
+        cudaDeviceReset();
+        exit(EXIT_SUCCESS);
+    }
 }
 
 void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
@@ -177,13 +232,10 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
 }
 
 void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
-	if (MouseOverImGuiWindow())
-	{
-		return;
-	}
-	leftMousePressed = (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS);
-	rightMousePressed = (button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_PRESS);
-	middleMousePressed = (button == GLFW_MOUSE_BUTTON_MIDDLE && action == GLFW_PRESS);
+  if (ImGui::GetIO().WantCaptureMouse) return;
+  leftMousePressed = (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS);
+  rightMousePressed = (button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_PRESS);
+  middleMousePressed = (button == GLFW_MOUSE_BUTTON_MIDDLE && action == GLFW_PRESS);
 }
 
 void mousePositionCallback(GLFWwindow* window, double xpos, double ypos) {
