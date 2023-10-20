@@ -7,12 +7,11 @@ CUDA Denoiser For CUDA Path Tracer
   * [LinkedIn](https://www.linkedin.com/in/udwivedi/), [personal website](https://utkarshdwivedi.com/)
 * Tested on: Windows 11 Home, AMD Ryzen 7 5800H @ 3.2GHz 16 GB, Nvidia GeForce RTX 3060 Laptop GPU 6 GB
 
-# CUDA Denoiser for CUDA Path Tracer
+## Introduction
 
 |<img src="img/mainNoisy.png" width="400">|<img src="img/mainDenoised.png" width="400">|
 |:-:|:-:|
 |Original 100 samples per pixel|Denoised|
-## Introduction
 
 This is a CUDA implementation of the paper ["Edge-Avoiding A-Trous Wavelet Transform for fast Global Illumination Filtering"](https://jo.dreggn.org/home/2010_atrous.pdf), which describes a fast-approximation for a Gaussian-blur based denoiser for noisy path traced images coupled with an edge-avouding solution. This denoiser helps significantly reduce render times by reducing the overall samples per pixel required to get a denoised render that looks comparable to a render that would require many more samples per pixel to look similar.
 
@@ -44,7 +43,7 @@ This is where "a-trous" comes in. In very simple terms, this is still a Gaussian
 
 |<img src="img/atrous.png">|
 |:-:|
-|3 iterations of the fast approximated Gaussian blur kernel|
+|3 iterations of the fast approximated Gaussian blur kernel (image source: see [paper](https://jo.dreggn.org/home/2010_atrous.pdf))|
 
 This blur looks like this:
 |<img src="img/blurIter3.png" width="300">|<img src="img/blurIter5.png" width="300">|<img src="img/blurPS.png" width="300">|
