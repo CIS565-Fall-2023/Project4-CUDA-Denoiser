@@ -22,10 +22,10 @@ static double lastY;
 int ui_iterations = 0;
 int startupIterations = 0;
 int lastLoopIterations = 0;
-bool lastDenoise = false;
+DenoiseMode lastDenoiseMode = DenoiseMode::NONE;
 RenderMode ui_renderMode = RenderMode::FULL;
-bool ui_denoise = false;
-int ui_filterSize = 80;
+DenoiseMode ui_denoiseMode = DenoiseMode::NONE;
+int ui_denoiseIters = 5;
 float ui_colorWeight = 0.45f;
 float ui_normalWeight = 0.35f;
 float ui_positionWeight = 0.2f;
@@ -138,10 +138,10 @@ void runCuda() {
       camchanged = true;
     }
 
-	if (lastDenoise != ui_denoise)
+	if (lastDenoiseMode != ui_denoiseMode)
 	{
-		camchanged = !ui_denoise;
-		lastDenoise = ui_denoise;
+		camchanged = true;
+		lastDenoiseMode = ui_denoiseMode;
 	}
 
     if (camchanged) {
@@ -175,8 +175,10 @@ void runCuda() {
     uchar4 *pbo_dptr = NULL;
     cudaGLMapBufferObject((void**)&pbo_dptr, pbo);
 
+	denoiserParams.mode = ui_denoiseMode;
 	denoiserParams.maxIters = ui_iterations;
-	denoiserParams.denoiseFilterSize = ui_denoise ? ui_filterSize : 0;
+	denoiserParams.denoiseIters = ui_denoiseMode == DenoiseMode::NONE ? 0 : ui_denoiseIters;
+	//denoiserParams.denoiseFilterSize = ui_denoise ? std::log2(ui_filterSize) - 1 : 0;
 	denoiserParams.phiCol = ui_colorWeight;
 	denoiserParams.phiNor = ui_normalWeight;
 	denoiserParams.phiPos = ui_positionWeight;

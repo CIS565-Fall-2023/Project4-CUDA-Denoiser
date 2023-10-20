@@ -30,7 +30,6 @@
 #define ENABLE_BVH 1
 #define ENABLE_RUSSIAN_ROULETTE 1
 #define ENABLE_HDR_GAMMA_CORRECTION 0
-#define ONLY_DENOISE_LAST_ITERATION 0
 
 #define GAMMA 2.2
 
@@ -63,10 +62,19 @@ enum class RenderMode
     COUNT
 };
 
+enum class DenoiseMode
+{
+    NONE,
+    DENOISE_AFTER_PATHTRACING,
+    DENOISE_AT_EVERY_ITERATION,
+    COUNT
+};
+
 struct DenoiserParameters
 {
+    DenoiseMode mode;
     int maxIters;
-    int denoiseFilterSize;
+    int denoiseIters;
     float phiCol;
     float phiPos;
     float phiNor;

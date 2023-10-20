@@ -212,18 +212,26 @@ void drawGui(int windowWidth, int windowHeight) {
 
     ImGui::SliderInt("Iterations", &ui_iterations, 1, startupIterations);
 
-    ImGui::Checkbox("Denoise", &ui_denoise);
+    int filterSize = 1 << (ui_denoiseIters + 1);        // technically we can do log2(ui_filterSize) - 1 to figure out denoise iters but this reverse way makes more sense to me
 
-    ImGui::SliderInt("Filter Size", &ui_filterSize, 0, 100);
-    ImGui::SliderFloat("Color Weight", &ui_colorWeight, 0.0f, 10.0f);
-    ImGui::SliderFloat("Normal Weight", &ui_normalWeight, 0.0f, 10.0f);
-    ImGui::SliderFloat("Position Weight", &ui_positionWeight, 0.0f, 10.0f);
+    const int countDenoise = static_cast<int>(DenoiseMode::COUNT);
+    const char* labelsDenoise[countDenoise] = { "Off", "Denoise After Pathtracing", "Denoise After Every Trace"};
+    ImGui::Combo("Denoise Mode", reinterpret_cast<int*>(&ui_denoiseMode), labelsDenoise, countDenoise);
+
+    if (ui_denoiseMode != DenoiseMode::NONE)
+    {
+        ImGui::SliderInt("Denoise Iters", &ui_denoiseIters, 0, 10);
+        ImGui::Text(("Denoise Filter Size: " + std::to_string(filterSize) + "x" + std::to_string(filterSize)).c_str());
+        ImGui::SliderFloat("Color Weight", &ui_colorWeight, 0.0f, 1.0f);
+        ImGui::SliderFloat("Normal Weight", &ui_normalWeight, 0.0f, 1.0f);
+        ImGui::SliderFloat("Position Weight", &ui_positionWeight, 0.0f, 1.0f);
+    }
 
     ImGui::Separator();
 
-    const int count = static_cast<int>(RenderMode::COUNT);
-    const char* labels[count] = { "Full", "Positions", "Normals", "Depth"};
-    ImGui::Combo("Render Mode", reinterpret_cast<int*>(&ui_renderMode), labels, count);
+    const int countRender = static_cast<int>(RenderMode::COUNT);
+    const char* labels[countRender] = { "Full", "Positions", "Normals", "Depth"};
+    ImGui::Combo("Render Mode", reinterpret_cast<int*>(&ui_renderMode), labels, countRender);
 
     ImGui::Separator();
 

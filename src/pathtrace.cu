@@ -556,7 +556,7 @@ __global__ void denoise(const glm::vec3* readFrameBuffer, glm::vec3* writeFrameB
 		return;
 	}
 
-	int index = x * resolution.y + y;
+	int index = x + resolution.x * y;
 	writeFrameBuffer[index] = glm::vec3(0.0f);
 
 	const glm::vec3& col = readFrameBuffer[index];
@@ -570,15 +570,16 @@ __global__ void denoise(const glm::vec3* readFrameBuffer, glm::vec3* writeFrameB
 	float dist2;
 	float colW, posW, norW, totalW;
 
+#pragma unroll
 	for (int i = 0; i < 25; i++)
 	{
-		int readPxX = x + dev_offsets[i * 2] * 1;
+		int readPxX = x + dev_offsets[i * 2] * stepWidth;
 		readPxX = glm::clamp(readPxX, 0, resolution.x - 1);
 
-		int readPxY = y + dev_offsets[i * 2 + 1] * 1;
-		readPxY = glm::clamp(readPxY, 0, resolution.x - 1);
+		int readPxY = y + dev_offsets[i * 2 + 1] * stepWidth;
+		readPxY = glm::clamp(readPxY, 0, resolution.y - 1);
 
-		int readPxIdx = readPxX * resolution.x + readPxY;
+		int readPxIdx = readPxX + resolution.x * readPxY;
 
 		iterCol = readFrameBuffer[readPxIdx];
 		t = col - iterCol;
@@ -598,6 +599,8 @@ __global__ void denoise(const glm::vec3* readFrameBuffer, glm::vec3* writeFrameB
 		totalW = colW * posW * norW;
 		sum += iterCol * totalW * dev_kernel[i];
 		wSum += totalW * dev_kernel[i];
+		//sum += iterCol * dev_kernel[i];
+		//wSum += dev_kernel[i];
 	}
 
 	writeFrameBuffer[index] = sum / wSum;
@@ -766,20 +769,19 @@ void pathtrace(int frame, int iter, const DenoiserParameters& denoiserParams) {
 	dim3 numBlocksPixels = (pixelcount + blockSize1d - 1) / blockSize1d;
 	finalGather << <numBlocksPixels, blockSize1d >> > (pixelcount, iter, dev_image, dev_paths);
 
-#if ONLY_DENOISE_LAST_ITERATION
-	if (denoiserParams.denoiseFilterSize > 0 && iter == denoiserParams.maxIters - 1)
-#else
-	if (denoiserParams.denoiseFilterSize > 0)
-#endif
+
+	if (denoiserParams.denoiseIters > 0 &&
+		((denoiserParams.mode == DenoiseMode::DENOISE_AFTER_PATHTRACING && iter == denoiserParams.maxIters) ||
+			(denoiserParams.mode == DenoiseMode::DENOISE_AT_EVERY_ITERATION)))
 	{
-		for (int i = 0; i < denoiserParams.denoiseFilterSize; i++)
+		for (int i = 0; i < denoiserParams.denoiseIters; i++)
 		{
 			int stepWidth = 1 << i;
 			std::swap(dev_imageRead, dev_image);
 			denoise<<<blocksPerGrid2d, blockSize2d>>>(dev_imageRead, dev_image, hst_scene->state.camera.resolution, stepWidth, denoiserParams.phiCol, denoiserParams.phiNor, denoiserParams.phiPos, dev_gBuffer);
 		}
 
-		if (denoiserParams.denoiseFilterSize & 1 == 0)	// fast way to check denoiseFilterSize%2 == 0
+		if (denoiserParams.denoiseIters & 1 == 0)	// fast way to check denoiseFilterSize%2 == 0
 		{
 			std::swap(dev_imageRead, dev_image);
 		}
