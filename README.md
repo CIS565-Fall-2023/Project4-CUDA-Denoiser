@@ -7,6 +7,7 @@ Project 4 CUDA Denoiser
 * Tested on: Windows 11, i7-12700H @ 2.30GHz 16GB, Nvidia Geforce RTX 3060 Ti  8054MB
   
 ## Summary
+===
 This project is a pathtracing denoiser that uses geometry buffers (G-buffers) to guide a smoothing filter. The technique is based on the paper "Edge-Avoiding A-Trous Wavelet Transform for fast Global Illumination Filtering," by Dammertz, Sewtz, Hanika, and Lensch.
 
 * G-Buffers for normals and positions
@@ -21,7 +22,8 @@ This project is a pathtracing denoiser that uses geometry buffers (G-buffers) to
 <br/>
 
 ## Performance Analysis
-<br/>
+===
+
 #### how much time denoising adds to your renders & how varying filter sizes affect performance
 
 | |  filter size = 10 | filter size = 40 | filter size = 80 |
