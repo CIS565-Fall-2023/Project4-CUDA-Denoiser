@@ -589,10 +589,13 @@ void denoise(uchar4* pbo, int iter, float c_phi, float n_phi, float p_phi, float
         }
     }
     timer().endGpuTimer();
+    
+    // for screenshots
+    cudaMemcpy(hst_scene->state.image.data(), dev_denoised_img_out, pixelCount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
 
     // Send results to OpenGL buffer for rendering
     sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, iter, dev_denoised_img_out);
-
+    
     if (callCount < TIMER_COUNT) {
         std::cout << "Denoiser: " << timer().getGpuElapsedTimeForPreviousOperation() << "ms. " << std::endl;
     }

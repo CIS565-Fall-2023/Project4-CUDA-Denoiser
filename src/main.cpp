@@ -28,9 +28,9 @@ int ui_currGBuffer = 0;
 bool ui_denoise = false;
 bool ui_atrous = false;
 int ui_filterSize = 80;
-float ui_colorWeight = 100.f;
+float ui_colorWeight = 150.f;
 float ui_normalWeight = 0.35f;
-float ui_positionWeight = 0.2f;
+float ui_positionWeight = 0.35f;
 bool ui_saveAndExit = false;
 int denoiserCallCount = 0;
 int ptCallCount = 0;
@@ -74,7 +74,7 @@ int main(int argc, char** argv) {
     width = cam.resolution.x;
     height = cam.resolution.y;
 
-    ui_iterations = 100; // renderState->iterations;
+    ui_iterations = 50; // renderState->iterations;
     startupIterations = renderState->iterations;
 
     glm::vec3 view = cam.view;
@@ -111,16 +111,15 @@ void saveImage() {
         for (int y = 0; y < height; y++) {
             int index = x + (y * width);
             glm::vec3 pix = renderState->image[index];
-            if (ui_denoise) {
-                img.setPixel(width - 1 - x, y, glm::vec3(pix));
-            }
-            else {
-                img.setPixel(width - 1 - x, y, glm::vec3(pix) / samples);
-            }
+            img.setPixel(width - 1 - x, y, glm::vec3(pix) / samples);
         }
     }
 
     std::string filename = renderState->imageName;
+    if (ui_denoise) {
+        filename += "_denoised";
+    }
+
     std::ostringstream ss;
     ss << resultsFolderPath << filename << "." << startTimeString << "." << samples << "samp";
     filename = ss.str();
@@ -138,9 +137,9 @@ void runCuda() {
 
     if (camchanged) {
         iteration = 0;
-        // for performance analysis
-        denoiserCallCount = 0;
-        ptCallCount = 0;
+        //// for performance analysis
+        //denoiserCallCount = 0;
+        //ptCallCount = 0;
 
         Camera &cam = renderState->camera;
         cameraPosition.x = zoom * sin(phi) * sin(theta);
@@ -192,10 +191,10 @@ void runCuda() {
         showImage(pbo_dptr, iteration);
         ptCallCount++; //not working properly but can stop printing some logs
     }
+    timer.endCpuTimer();
 
     // for performance analysis
     if (iteration == ui_iterations) {
-        timer.endCpuTimer();
         if (ui_denoise && denoiserCallCount < TIMER_COUNT) {
             std::cout << "Path tracer with denoiser execution: " << timer.getCpuElapsedTimeForPreviousOperation() << "ms." << std::endl;
         }
