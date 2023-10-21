@@ -65,6 +65,7 @@ int main(int argc, char** argv) {
     // Set up camera stuff from loaded path tracer settings
     iteration = 0;
     renderState = &scene->state;
+
     Camera &cam = renderState->camera;
     width = cam.resolution.x;
     height = cam.resolution.y;
@@ -162,13 +163,13 @@ void runCuda() {
 
         // execute the kernel
         int frame = 0;
-        pathtrace(frame, iteration);
+        pathtrace(frame, iteration, ui_filterSize, ui_colorWeight, ui_normalWeight, ui_positionWeight, ui_denoise);
     }
 
     if (ui_showGbuffer) {
       showGBuffer(pbo_dptr);
     } else {
-      showImage(pbo_dptr, iteration);
+      showImage(pbo_dptr, iteration, ui_denoise);
     }
 
     // unmap buffer object
