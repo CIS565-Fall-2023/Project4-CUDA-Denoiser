@@ -11,7 +11,7 @@ This project is a pathtracing denoiser that uses geometry buffers (G-buffers) to
 
 * G-Buffers for normals and positions
 
-|  the scene  | per-pixel normals | per-pixel positions (scaled down) | 
+|  the scene  | per-pixel normals | per-pixel positions | 
 |---|---|---|
 |![](img/full.png)|![](img/normal.png)|![](img/dist.png)|
 * the A-trous kernel and its iterations
@@ -26,14 +26,16 @@ This project is a pathtracing denoiser that uses geometry buffers (G-buffers) to
 * how much time denoising adds to your renders & how varying filter sizes affect performance
 
 | |  filter size = 10 | filter size = 40 | filter size = 80 |
-|---|---|---|
+|---|---|---|---|
 | Denoise time recorded| ![](img/time10.png)|![](img/time40.png)|![](img/time80.png)|
-|---|---|---|
+|---|---|---|---|
 |Denoise time (average)| 2.83ms|6.62ms|8.56ms|
 
 * how denoising at different resolutions impacts runtime
 
 The time needed for running the denoise roughly scale with the image resolution.
 | |  resolution = 400 * 400 | resolution = 800 * 800| 
+|---|---|---|
 | Denoise time recorded| ![](img/time80@400.png)|![](img/time80.png)|
+|---|---|---|
 |Denoise time (average)| 4.90ms |8.56ms|
