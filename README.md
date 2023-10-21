@@ -134,8 +134,7 @@ This is where this algorithm starts to fail. Most of the detail that is refracte
 |:-:|:-:|
 |Path-traced (100 samples per pixel) + Denoised<br>Render time: 1.03 seconds|Path-traced (100 samples per pixel) + Denoised<br>Render time: 0.82 seconds|
 
-how effective/ineffective is this method with different material types
-how do results compare across different scenes - for example, between cornell.txt and cornell_ceiling_light.txt. Does one scene produce better denoised results? Why or why not?
+This result is expected. With a larger light source, there would be less noise in the path-traced result simply because a lot more rays would reach the light source. As a result, denoising a less noisy image would result in a smoother looking render.
 
 ## References
 
