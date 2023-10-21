@@ -19,9 +19,9 @@ Based on my observation, with the denoize feature implemented, the iteration amo
 
 Also, based on my test I got the following graph amount of the resolution and runtime of denoize:
 
-|without denoizer|with denoize|
-|:-----:|:-----:|
-|<img src="https://github.com/Ibm510000/Project4-CUDA-Denoiser/blob/base-code/img/denoize_resolution.png" width="300" height="300">|<img src="https://github.com/Ibm510000/Project4-CUDA-Denoiser/blob/base-code/img/denoize_resolution.png" width="300" height="300">
+|without denoizer|
+|:-----:|
+|<img src="https://github.com/Ibm510000/Project4-CUDA-Denoiser/blob/base-code/img/denoize_resolution.png" width="300" height="300">
 
 
 
