@@ -211,10 +211,12 @@ void drawGui(int windowWidth, int windowHeight) {
     }
 
     ImGui::SliderInt("Iterations", &ui_iterations, 1, startupIterations);
-
+    ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
     ImGui::Checkbox("Denoise", &ui_denoise);
+    ImGui::Checkbox("Guassian", &ui_gdenoise);
+    ImGui::SliderFloat("Standard Deviation for Guassian filter", &ui_sigma, 0.0f, 10.0f);
 
-    ImGui::SliderInt("Filter Size", &ui_filterSize, 0, 100);
+    ImGui::SliderInt("Filter Size", &ui_filterSize, 1, 100);
     ImGui::SliderFloat("Color Weight", &ui_colorWeight, 0.0f, 10.0f);
     ImGui::SliderFloat("Normal Weight", &ui_normalWeight, 0.0f, 10.0f);
     ImGui::SliderFloat("Position Weight", &ui_positionWeight, 0.0f, 10.0f);
