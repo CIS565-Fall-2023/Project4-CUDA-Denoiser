@@ -17,7 +17,7 @@ This project is a pathtracing denoiser that uses geometry buffers (G-buffers) to
 
 * the A-trous kernel and its iterations
 
-<img width="600" alt="1" src="img/bunny40.png"><img width="600" alt="1" src="img/denoise40.png">
+<img width="300" alt="1" src="img/bunny40.png"><img width="300" alt="1" src="img/denoise40.png">
 
 
 ## Performance Analysis
@@ -28,13 +28,15 @@ This project is a pathtracing denoiser that uses geometry buffers (G-buffers) to
 | Denoise time recorded| ![](img/time10.png)|![](img/time40.png)|![](img/time80.png)|
 |Denoise time (average)| 2.83ms|6.62ms|8.56ms|
 
+
 #### how denoising influences the number of iterations needed to get an "acceptably smooth" result
 
 | |  without denoiser | with denoiser| 
 |---|---|---|
 |Acceptable image | ![](img/bunny500.png)|![](img/denoise40.png)|
 |Iterations| 500 |40|
-  
+
+
 #### how denoising at different resolutions impacts runtime
 
 The time needed for running the denoise roughly scale with the image resolution.
@@ -43,7 +45,8 @@ The time needed for running the denoise roughly scale with the image resolution.
 | Denoise time recorded| ![](img/time80@400.png)|![](img/time80.png)|
 |Denoise time (average)| 4.90ms |8.56ms|
 
-* how visual results vary with filter size
+
+#### how visual results vary with filter size
 As the filter size increases, the degree of improvement in image optimization caused by the filter size increase gradually diminishes.
 |  filter size = 4  | filter size = 40 | filter size = 80 | 
 |---|---|---|
@@ -58,6 +61,7 @@ The method is very effective for diffuse and specular materials, but less effect
 |---|---|---|---|
 |Denoiser Off| ![](img/denoise_off_diff.png)|![](img/denoise_off_spec.png)|![](img/denoise_off_glass.png)|
 |Denoiser On | ![](img/denoise_on_diff.png) |![](img/denoise_on_spec.png) |![](img/denoise_on_glass.png) |
+
 
 #### how do results compare across different scenes
 
