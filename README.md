@@ -100,4 +100,8 @@ Cornell_ceiling_light:
 </div>
 
 Guassian filter-a Trous filter
-As I observed, I did not find any obvious visual difference between these two filters. 
+As I observed, I did not find any obvious visual difference between these two filters. Image shown with a-Trous and guassian.
+<div>
+<img src="./img/atrous.png" style="display:inline;" width=300px>
+<img src="./img/guassian.png" style="display:inline;" width=300px>
+</div>
