@@ -17,7 +17,7 @@ Firstly, Among the tested output, since the denoize time will be affected by the
 
 Based on my observation, with the denoize feature implemented, the iteration amount needed for reaching the acceptable smooth condition was significantly reduced, leading to more efficient and time-saving results in the process.
 
-Also, based on my test I got the following graph amount of the resolution and runtime of denoize:
+Also, based on my test I got the following graph among the resolution and runtime of denoize:
 
 |Graph1|
 |:-----:|
@@ -26,4 +26,10 @@ Also, based on my test I got the following graph amount of the resolution and ru
 
 
 It is easy to see that while the resolution increased, the amount of that denoize needed was increased. It is also easy to understand: there are more pixels needed to estimate, and thus takes more time to denoize.
+
+Additionally, I get the following graph among the filter size and runtime of denoize:
+
+|Graph2|
+|:-----:|
+|<img src="https://github.com/Ibm510000/Project4-CUDA-Denoiser/blob/base-code/img/resolution.png" width="700" height="500">
 
