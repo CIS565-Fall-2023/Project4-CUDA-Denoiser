@@ -29,7 +29,6 @@ These per-pixel metrics can include scene geometry information (hence G-buffer),
 
 *Figure 2. Per-pixel normal map (mapped to 0-1 range) and position map (scaled down).*
 
-## Performance Analysis
 ## Visual Quality Analysis
 The test scene used for the following results is a standard cornell box with a resolution of 800x800 pixels generated at 50 iterations. For the 3 denoiser weights, we use a `color weight` of 150.0, a `normal weight` of 0.35 and a `position weight` of 0.35.
 
@@ -78,3 +77,25 @@ Since we are using the provided super basic version of path tracer, for this com
 |![](img/results/smallLight500Iter.png)|![](img/results/largeLight500Iter.png)
 
 The scene with the larger ceiling light produces much better denoised results than the scene with the smaller light. With the same number of iterations, our scene can converge faster with a larger light source because the rays have a higher probability to hit the light source. In the smaller light scene, rays are more likely to miss the light, which leads to a noisier image. Imagine how many iterations it would require for the default cornell box to produce an image with a comparable quality as the scene with the ceiling light. The denoiser is able to produce an image much closer to the expected outcome quickly.
+
+## Performance Analysis
+We measure performance by timing the `pathtrace()` kernel and the `denoise()` kernel, which is only run once at the end of pathtracing. We use `cudaEvents` to record the total execution time of the kernel. For the following measurements, we use the same ceiling light cornell box scene and the same denoiser specifications as noted in the visual analysis part.
+
+### Total Render Time w/wo Denoiser
+Denoising time is indepedent of total path tracing iterations since it only runs once at the end. In the graph below, we can see that total denoising time did not vary much between iteration counts. As the time executing `pathtrace()` increases with the iteration count, we spend lesser and lesser a proportion of the total render time denoising the output image. Given the desirable visual improvement, the performance cost of the denoiser is fully acceptable.
+
+![](/img/stats/denoiserTime.png)
+
+### Denoising Time vs. Filter Size
+As mentioned in the "Varying Filter Size" part of the visual analysis section, we calculate the number of times we perform denoising passes on the render based on the input filter size. It is expected that the execution time of `denoise()` will increase when filter size increases, since each pixel now needs to consider a higher number of neighboring pixels while approximating the edge-avoiding blur.
+
+The following tests were performed at a fixed 50 iterations for the path tracer. Note that we only measure the average execution of one pass among the 5 total iterations of denoising.
+
+![](/img/stats/denoiserFiltersize.png)
+
+### Denoising at Different Resolutions
+Denoising time increases along with the increase of the image resolution. This is expected because a higher resolution means we have to run our filter over more pixels, which will directly impact runtime.
+
+The following tests were performed at a fixed 50 iterations for the path tracer and a filter size of 80x80 for the denoiser. Here we choose some common image resolution sizes. Note that we only measure the average execution of one pass among the 5 total iterations of denoising.
+
+![](/img/stats/denoiserRes.png)

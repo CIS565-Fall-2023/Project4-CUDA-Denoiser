@@ -26,7 +26,7 @@ int lastLoopIterations = 0;
 bool ui_showGbuffer = false;
 int ui_currGBuffer = 0;
 bool ui_denoise = false;
-bool ui_atrous = false;
+bool ui_atrous = true;
 int ui_filterSize = 80;
 float ui_colorWeight = 150.f;
 float ui_normalWeight = 0.35f;
@@ -137,9 +137,9 @@ void runCuda() {
 
     if (camchanged) {
         iteration = 0;
-        //// for performance analysis
-        //denoiserCallCount = 0;
-        //ptCallCount = 0;
+        // for performance analysis
+        denoiserCallCount = 0;
+        ptCallCount = 0;
 
         Camera &cam = renderState->camera;
         cameraPosition.x = zoom * sin(phi) * sin(theta);
@@ -189,7 +189,7 @@ void runCuda() {
     }
     else {
         showImage(pbo_dptr, iteration);
-        ptCallCount++; //not working properly but can stop printing some logs
+        ptCallCount++;
     }
     timer.endCpuTimer();
 
