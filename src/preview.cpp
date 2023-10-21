@@ -210,21 +210,21 @@ void drawGui(int windowWidth, int windowHeight) {
         ui_hide = !ui_hide;
     }
 
-    ImGui::SliderInt("Iterations", &ui_iterations, 1, startupIterations);
+    ImGui::SliderInt("Iterations", &ui_iterations, 1, 40);
 
     ImGui::Checkbox("Denoise", &ui_denoise);
 
-    ImGui::SliderInt("Filter Size", &ui_filterSize, 0, 100);
-    ImGui::SliderFloat("Color Weight", &ui_colorWeight, 0.0f, 10.0f);
-    ImGui::SliderFloat("Normal Weight", &ui_normalWeight, 0.0f, 10.0f);
-    ImGui::SliderFloat("Position Weight", &ui_positionWeight, 0.0f, 10.0f);
+    ImGui::SliderInt("Filter Size", &ui_filterSize, 0, 8);
+    ImGui::SliderFloat("Color Weight", &ui_colorWeight, 0.0f, 5.0f);
+    ImGui::SliderFloat("Normal Weight", &ui_normalWeight, 0.0f, 5.0f);
+    ImGui::SliderFloat("Position Weight", &ui_positionWeight, 0.0f, 5.0f);
 
     ImGui::Separator();
 
-    ImGui::Checkbox("Show GBuffer", &ui_showGbuffer);
+    //ImGui::Checkbox("Show GBuffer", &ui_showGbuffer);
 
     ImGui::Separator();
-
+    ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
     if (ImGui::Button("Save image and exit")) {
         ui_saveAndExit = true;
     }
