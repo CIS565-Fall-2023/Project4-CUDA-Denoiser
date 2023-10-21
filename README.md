@@ -20,7 +20,7 @@ Based on my observation, with the denoize feature implemented, the iteration amo
 
 Also, based on my test I got the following graph amount of the resolution and runtime of denoize:
 
-<img src="https://github.com/Ibm510000/Project4-CUDA-Denoiser/blob/base-code/img/denoize_resolution.png width="600" height="600"
+<img src="https://github.com/Ibm510000/Project4-CUDA-Denoiser/blob/base-code/img/denoize_resolution.png width="600" height="600">
 
 It is easy to see that while the resolution increased, the amount of that denoize needed was increased. It is also easy to understand: there are more pixels needed to estimate, and thus takes more time to denoize.
 
