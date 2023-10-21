@@ -42,7 +42,7 @@ Performance Analysis
 
 #### How denoising at different resolutions impacts runtime
 
-The time needed for running the denoise roughly scale with the image resolution.
+The time needed for running the denoiser roughly scales with the image resolution.
 | |  resolution = 400 * 400 | resolution = 800 * 800| 
 |---|---|---|
 | Denoise time recorded| ![](img/time80@400.png)|![](img/time80.png)|
@@ -58,7 +58,7 @@ As the filter size increases, the degree of improvement in image optimization ca
 
 #### How effective/ineffective is this method with different material types
 
-The method is very effective for diffuse and specular materials, but less effective for glass materials. The refraction material generates extremely light dot noise that is hard to be blured by the filter.
+The method is very effective for diffuse and specular materials, but less effective for glass materials. The refraction material generates extremely light dot noise that is hard to be blurred by the filter.
 
 | | Diffuse | Perfect Specular | Specular + Refraction (Glass) | 
 |---|---|---|---|
