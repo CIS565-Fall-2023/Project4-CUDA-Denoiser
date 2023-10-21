@@ -169,7 +169,7 @@ void runCuda() {
     if (ui_showGbuffer) {
       showGBuffer(pbo_dptr);
     } else {
-      showImage(pbo_dptr, iteration);
+      showImage(pbo_dptr, iteration, ui_denoise);
     }
 
     // unmap buffer object

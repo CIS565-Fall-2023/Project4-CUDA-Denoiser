@@ -195,6 +195,7 @@ void drawGui(int windowWidth, int windowHeight) {
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
+
     // Dear imgui define
     ImVec2 minSize(300.f, 220.f);
     ImVec2 maxSize((float)windowWidth * 0.5, (float)windowHeight * 0.3);
@@ -209,12 +210,12 @@ void drawGui(int windowWidth, int windowHeight) {
     if (ImGui::IsKeyPressed('H')) {
         ui_hide = !ui_hide;
     }
-
+    ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
     ImGui::SliderInt("Iterations", &ui_iterations, 1, startupIterations);
-
+    
     ImGui::Checkbox("Denoise", &ui_denoise);
 
-    ImGui::SliderInt("Filter Size", &ui_filterSize, 0, 100);
+    ImGui::SliderInt("Filter Size", &ui_filterSize, 0, 500);
     ImGui::SliderFloat("Color Weight", &ui_colorWeight, 0.0f, 10.0f);
     ImGui::SliderFloat("Normal Weight", &ui_normalWeight, 0.0f, 10.0f);
     ImGui::SliderFloat("Position Weight", &ui_positionWeight, 0.0f, 10.0f);

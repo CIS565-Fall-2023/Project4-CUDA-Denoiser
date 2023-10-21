@@ -18,6 +18,10 @@
 
 #define FILENAME (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 #define checkCUDAError(msg) checkCUDAErrorFn(msg, FILENAME, __LINE__)
+
+
+
+
 void checkCUDAErrorFn(const char *msg, const char *file, int line) {
 #if ERRORCHECK
     cudaDeviceSynchronize();
@@ -93,10 +97,21 @@ static Material * dev_materials = NULL;
 static PathSegment * dev_paths = NULL;
 static ShadeableIntersection * dev_intersections = NULL;
 static GBufferPixel* dev_gBuffer = NULL;
+
+
+static cudaEvent_t event_start = nullptr;
+static cudaEvent_t event_end = nullptr;
+float prev_elapsed_time_gpu_milliseconds = 0.f;
+
 // TODO: static variables for device memory, any extra info you need, etc
 // ...
 
 void pathtraceInit(Scene *scene) {
+
+    cudaEventCreate(&event_start);
+    cudaEventCreate(&event_end);
+    cudaEventRecord(event_start);
+
     hst_scene = scene;
     const Camera &cam = hst_scene->state.camera;
     const int pixelcount = cam.resolution.x * cam.resolution.y;
@@ -155,7 +170,11 @@ void pathtraceFree() {
   	cudaFree(dev_intersections);
     cudaFree(dev_gBuffer);
     // TODO: clean up any extra device memory you created
-
+    if (event_end != nullptr) {
+        cudaEventDestroy(event_start);
+        cudaEventDestroy(event_end);
+    }
+    
     checkCUDAError("pathtraceFree");
 }
 
@@ -351,8 +370,6 @@ Camera cam, float step, float* kernel, int iter) {
         for (int q = -2; q < 3; q++) {
             int cur_x = x + q * step;
             int cur_y = y + i * step;
-            //cur_x = glm::clamp(cur_x, 0, cam.resolution.x - 1);
-            //cur_y = glm::clamp(cur_y, 0, cam.resolution.y - 1);
             if (cur_x > 0 && cur_x < cam.resolution.x - 1 && cur_y>0 && cur_y < cam.resolution.y - 1) {
                 int cur_idx = cur_y * cam.resolution.x + cur_x;
 
@@ -381,13 +398,10 @@ Camera cam, float step, float* kernel, int iter) {
                 cum_w += weight * new_float;
             
             }
-            
-
         }
     }
-    //img_out[org_idx] = gbuffer[org_idx].normal;
+
     img_out[org_idx] = sum / cum_w;
-    //img_out[org_idx] = glm::vec3(1);
 }
 
 
@@ -489,6 +503,8 @@ void pathtrace(int frame, int iter, int filter, float c_phi, float n_phi, float 
 	finalGather<<<numBlocksPixels, blockSize1d>>>(num_paths, dev_image, dev_paths);
 
     if (ui_denoize) {
+        cudaEventRecord(event_start);
+
         cudaMemcpy(dev_image_old,dev_image , pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToDevice);
 
         const Camera& cam = hst_scene->state.camera;
@@ -498,8 +514,6 @@ void pathtrace(int frame, int iter, int filter, float c_phi, float n_phi, float 
             (cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
 
         for (int stepsize = 0; stepsize <ceil(log2(filter / 2)); stepsize++) {
-            //denoizeKernelFilter(glm::vec3 * img_in, glm::vec3 * img_out, GBufferPixel * gbuffer, float c_phi, float n_phi, float p_phi,
-                //Camera cam, int iter, float step, float* kernel) {
 
             denoizeKernelFilter << <blocksPerGrid2d, blockSize2d >> > (dev_image_old, dev_image_new, dev_gBuffer, c_phi, n_phi, p_phi, cam, stepsize, dev_kernel,iter);
             /*
@@ -513,7 +527,14 @@ void pathtrace(int frame, int iter, int filter, float c_phi, float n_phi, float 
 
         cudaMemcpy(hst_scene->state.image.data(), dev_image_new,
             pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
-    
+
+        cudaEventRecord(event_end);
+        cudaEventSynchronize(event_end);
+
+        cudaEventElapsedTime(&prev_elapsed_time_gpu_milliseconds, event_start, event_end);
+
+        cout << "Recorded time = " << prev_elapsed_time_gpu_milliseconds << std::endl;
+        
     }
     else {
         cudaMemcpy(hst_scene->state.image.data(), dev_image,
@@ -544,7 +565,7 @@ void showGBuffer(uchar4* pbo) {
     gbufferToPBO<<<blocksPerGrid2d, blockSize2d>>>(pbo, cam.resolution, dev_gBuffer);
 }
 
-void showImage(uchar4* pbo, int iter) {
+void showImage(uchar4* pbo, int iter, bool ui_denoise) {
 const Camera &cam = hst_scene->state.camera;
     const dim3 blockSize2d(8, 8);
     const dim3 blocksPerGrid2d(
@@ -552,5 +573,11 @@ const Camera &cam = hst_scene->state.camera;
             (cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
 
     // Send results to OpenGL buffer for rendering
-    sendImageToPBO<<<blocksPerGrid2d, blockSize2d>>>(pbo, cam.resolution, iter, dev_image_new);
+    if (ui_denoise) {
+        sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, iter, dev_image_new);
+    }
+    else {
+        sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, iter, dev_image);
+    }
+    
 }
