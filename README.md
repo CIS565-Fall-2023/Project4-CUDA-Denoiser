@@ -7,6 +7,8 @@ CUDA Denoiser For CUDA Path Tracer
   * [LinkedIn](https://www.linkedin.com/in/xiaoxiao-zou-23482a1b9/)
 * Tested on: Windows 11, AMD Ryzen 9 7940HS @ 4.00 GHz, RTX 4060 Laptop 
 
+Implement Edge avoiding A-Trous wavelet transform and Edge avoiding Guassian filtering
+
 ### Performance & Analysis
 
 <table>
@@ -61,7 +63,7 @@ Denoising will give an "acceptably smooth" result at lower iteration as shown ab
 ![](./img/filter_size.png)
 ![](./img/resolution.png)
 
-Denoising will add more time to the renders. For A-tous, it usually slow down the renderer about 10-20FPS. For Guassian, it slower the renderer a lot especially when the filter size is large. Larger filter size will genuinely add more time to the renders. For A-Tous, it adds slightly more time since number of levels need to compute did not increase much as the filter size goes larger and larger. However, for guassian, FPS get a huge markdown due to increasing size of kernel. For resolution, smaller resolution will give better runtime for both unfiltered and denoised image. Denoising will be a good technique for smaller resolution since the image will be blurry anyway for small image, this gives a better approximation for image. 
+Denoising will add more time to the renders. For A-tous, it usually slow down the renderer about 10-20FPS. For Guassian, it slower the renderer a lot especially when the filter size is large. Larger filter size will genuinely add more time to the renders. For A-Trous, it adds slightly more time since number of levels need to compute did not increase much as the filter size goes larger and larger. However, for guassian, FPS get a huge markdown due to increasing size of kernel. For resolution, smaller resolution will give better runtime for both unfiltered and denoised image. Denoising will be a good technique for smaller resolution since the image will be blurry anyway for small image, this gives a better approximation for image. 
 
 #### Denoising Visual effect - Filter size, material type, etc.
 
