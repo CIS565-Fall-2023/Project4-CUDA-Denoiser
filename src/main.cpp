@@ -1,10 +1,18 @@
 #include "main.h"
 #include "preview.h"
 #include <cstring>
-
+#include "../stream_compaction/common.h"
 #include "../imgui/imgui.h"
 #include "../imgui/imgui_impl_glfw.h"
 #include "../imgui/imgui_impl_opengl3.h"
+
+float denoise_time = 0.0f;
+using StreamCompaction::Common::PerformanceTimer;
+PerformanceTimer& timer()
+{
+    static PerformanceTimer timer;
+    return timer;
+}
 
 static std::string startTimeString;
 
@@ -20,7 +28,7 @@ static double lastY;
 // or look at the diff for commit 1178307347e32da064dce1ef4c217ce0ca6153a8.
 // For all the gory GUI details, look at commit 5feb60366e03687bfc245579523402221950c9c5.
 int ui_iterations = 100;
-int startupIterations = 0;
+int startupIterations = 100;
 int lastLoopIterations = 0;
 bool ui_showGbuffer = false;
 bool ui_denoise = false;
@@ -169,7 +177,13 @@ void runCuda() {
         showGBuffer(pbo_dptr);
     }
     else if (ui_denoise) {
+       // timer().startCpuTimer();
+
         showDenoisedImage(pbo_dptr, iteration, ui_colorWeight, ui_normalWeight, ui_positionWeight, ui_filterSize);
+
+       // timer().endCpuTimer();
+       // denoise_time = timer().getCpuElapsedTimeForPreviousOperation(); 
+       // cout << "Denoise time (This iter): " << denoise_time << "ms" << endl;
     }
     else {
         showImage(pbo_dptr, iteration);

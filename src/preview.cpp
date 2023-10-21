@@ -210,7 +210,9 @@ void drawGui(int windowWidth, int windowHeight) {
         ui_hide = !ui_hide;
     }
 
-    ImGui::SliderInt("Iterations", &ui_iterations, 1, startupIterations);
+    ImGui::Text("Application average (%.1f FPS)", ImGui::GetIO().Framerate);
+
+    ImGui::SliderInt("Iterations", &ui_iterations, 1, 100);
 
     ImGui::Checkbox("Denoise", &ui_denoise);
 
