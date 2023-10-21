@@ -156,11 +156,13 @@ void SandBox::DrawImGui()
 		static std::string cur_display_mode = "Color";
 		const static std::vector<std::string> display_modes{
 			"Color",
-			"Normal"
+			"Normal",
+			"Position"
 		};
 		const static std::vector<DisplayMode> modes{
 			DisplayMode::Color,
-			DisplayMode::Normal
+			DisplayMode::Normal,
+			DisplayMode::Position
 		};
 		if (ImGui::BeginCombo("##combo", cur_display_mode.c_str()))
 		{
@@ -171,6 +173,7 @@ void SandBox::DrawImGui()
 				{
 					cur_display_mode = display_modes[i];
 					m_PathTracer->m_DisplayMode = modes[i];
+					changed |= true;
 				}
 			}
 			ImGui::EndCombo();
@@ -179,7 +182,7 @@ void SandBox::DrawImGui()
 		changed |= ImGui::DragInt("Iterations", &m_PathTracer->m_MaxIteration, 1, 1, 5000);
 		DenoiseConfig& config = m_PathTracer->m_DenoiseConfig;
 		changed |= ImGui::Checkbox("Denoise", &config.denoise);
-		changed |= ImGui::DragInt("Filter Size", &config.level, 1, 3, 5);
+		changed |= ImGui::DragInt("Filter Size", &config.level, 1, 1, 100);
 		changed |= ImGui::DragFloat("Color Weight", &config.colorWeight, 0.05f, 0.f, 10.f);
 		changed |= ImGui::DragFloat("Normal Weight", &config.normalWeight, 0.05f, 0.f, 10.f);
 		changed |= ImGui::DragFloat("Position Weight", &config.positionWeight, 0.1f, 0.f, 10.f);

@@ -94,12 +94,17 @@ __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution, glm::vec3* im
 	{
 	case DisplayMode::Color:
 	{
-		pix = image[index];
+		pix = gbuffer[index].albedo * image[index];
 		break;
 	}
 	case DisplayMode::Normal:
 	{
 		pix = gbuffer[index].normal * 0.5f + 0.5f;
+		break;
+	}
+	case DisplayMode::Position:
+	{
+		pix = (gbuffer[index].position / 2.f) * 0.5f + 0.5f;
 		break;
 	}
 	default:
@@ -319,6 +324,14 @@ __global__ void KernelNaiveGI(const int iteration, const int num_paths, const in
 			glm::vec3 final_throughput = segment.throughput * material.emittance;
 			pathSegments[idx].radiance = final_throughput;
 			pathSegments[idx].Terminate();
+			if (cache_gbuffer)
+			{
+				GInfo info;
+				info.normal = intersection.normal;
+				info.position = intersection.position;
+				info.albedo = glm::vec3(1.f);
+				gbuffer[idx] = info;
+			}
 		}
 		else
 		{	
@@ -329,6 +342,7 @@ __global__ void KernelNaiveGI(const int iteration, const int num_paths, const in
 				GInfo info;
 				info.normal = intersection.normal;
 				info.position = intersection.position;
+				info.albedo = glm::vec3(1.f);
 				gbuffer[idx] = info;
 			}
 
@@ -339,7 +353,19 @@ __global__ void KernelNaiveGI(const int iteration, const int num_paths, const in
 			{
 				// generate new ray
 				pathSegments[idx].ray = Ray::SpawnRay(intersection.position, bsdf_sample.wiW);
-				pathSegments[idx].throughput *= glm::clamp(bsdf_sample.f * glm::abs(glm::dot(bsdf_sample.wiW, intersection.normal)) / bsdf_sample.pdf, glm::vec3(0.1f), glm::vec3(1.f));
+				glm::vec3 throughput = glm::clamp(bsdf_sample.f * glm::abs(glm::dot(bsdf_sample.wiW, intersection.normal)) / bsdf_sample.pdf, glm::vec3(0.1f), glm::vec3(1.f));
+#if EXTRACT_FIRST_ALBEDO
+				if (cache_gbuffer)
+				{
+					gbuffer[idx].albedo = throughput;
+				}
+				else
+				{
+					pathSegments[idx].throughput *= throughput;
+				}
+#else
+				pathSegments[idx].throughput *= throughput;
+#endif
 				--pathSegments[idx].remainingBounces;
 
 				if (MaterialType::SubsurfaceScattering == material.type)
@@ -356,6 +382,11 @@ __global__ void KernelNaiveGI(const int iteration, const int num_paths, const in
 	}
 	else
 	{
+		if (cache_gbuffer)
+		{
+			gbuffer[idx].normal = glm::vec3(0.f);
+			gbuffer[idx].albedo = glm::vec3(1.f);
+		}
 		if (env_map.Valid())
 		{
 			pathSegments[idx].radiance = segment.throughput * glm::clamp(env_map.Get(segment.ray.direction), 0.f, 200.f);
@@ -400,17 +431,15 @@ __global__ void KernelDenoise(const glm::ivec2 resolution, const GInfo* gbuffer,
 	glm::vec3 color = denoised_img_r[index];
 	glm::vec3 normal = gbuffer[index].normal;
 	glm::vec3 position = gbuffer[index].position;
+	if (glm::dot(normal, normal) < 0.1f)
+	{
+		denoised_img_w[index] = denoised_img_r[index];
+		return;
+	}
 
 	float cum_weight = 0.f;
 	glm::vec3 sum = glm::vec3(0.f);
 	
-	//const float kernel[25] {
-	//	0.0030, 0.0133, 0.0219, 0.0133, 0.0030,
-	//	0.0133, 0.0596, 0.0983, 0.0596, 0.0133,
-	//	0.0219, 0.0983, 0.1621, 0.0983, 0.0219,
-	//	0.0133, 0.0596, 0.0983, 0.0596, 0.0133,
-	//	0.0030, 0.0133, 0.0219, 0.0133, 0.0030
-	//};
 	const float kernel[5]{1.f / 16.f, 1.f / 4.f, 3.f / 8.f, 1.f/ 4.f, 1.f / 16.f};
  	for (int h = -2; h <= 2; ++h)
 	{
@@ -420,21 +449,20 @@ __global__ void KernelDenoise(const glm::ivec2 resolution, const GInfo* gbuffer,
 			if (id >= 0 && id < resolution.x * resolution.y)
 			{
 				const glm::vec3 color_temp = denoised_img_r[id];
-
 				glm::vec3 t = color - color_temp;
 				float dist2 = glm::dot(t, t);
-
+				
 				float color_weight = glm::min(glm::exp(-dist2 / color_phi), 1.f);
-
+				
 				GInfo info = gbuffer[id];
 				t = normal - info.normal;
 				dist2 = glm::min(glm::dot(t, t) / (step_size * step_size), 0.f);
 				float normal_weight = glm::min(glm::exp(-dist2 / normal_phi), 1.f);
-
+				
 				t = position - info.position;
 				dist2 = glm::dot(t, t);
 				float position_weight = glm::min(glm::exp(-dist2 / position_phi), 1.f);
-
+				
 				float weight = color_weight * normal_weight * position_weight;
 				sum += color_temp * weight * kernel[(w + 2)] * kernel[(h + 2)];
 				cum_weight += weight * kernel[(w + 2)] * kernel[(h + 2)];
@@ -442,6 +470,33 @@ __global__ void KernelDenoise(const glm::ivec2 resolution, const GInfo* gbuffer,
 		}
 	}
 	cum_weight = cum_weight > Epsilon ? cum_weight : 1.f;
+	denoised_img_w[index] = sum / cum_weight;
+}
+
+__global__ void KernelGaussianDenoise(const glm::ivec2 resolution, const glm::vec3* denoised_img_r, glm::vec3* denoised_img_w, float sigma, int size)
+{
+	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+
+	if (x >= resolution.x || y >= resolution.y) return;
+	int index = (x + (y * resolution.x));
+
+	glm::vec3 sum = glm::vec3(0.f);
+
+	float cum_weight = 0.f;
+	for (int h = -size; h <= size; ++h)
+	{
+		for (int w = -size; w <= size; ++w)
+		{
+			const int id = index + (w + h * (resolution.x));
+			if (id >= 0 && id < resolution.x * resolution.y)
+			{
+				float scalar = (1.0 / (2.0 * Pi * sigma * sigma)) * exp(-(h * h + w * w) / (2.0 * sigma * sigma));
+				cum_weight += scalar;
+				sum += denoised_img_r[id] * scalar;
+			}
+		}
+	}
 	denoised_img_w[index] = sum / cum_weight;
 }
 
@@ -612,7 +667,7 @@ CPU_ONLY void CudaPathTracer::Render(GPUScene& scene,
 	if (m_DenoiseConfig.denoise)
 	{
 		cudaMemcpy(dev_denoised_img_r, dev_hdr_img, pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToDevice);
-
+#if A_TROUS_DENOISE
 		// denoise pass
 		for(int it = 1, step = 1; it <= m_DenoiseConfig.level; ++it, step <<= 1)
 		{
@@ -626,6 +681,10 @@ CPU_ONLY void CudaPathTracer::Render(GPUScene& scene,
 
 			std::swap(dev_denoised_img_r, dev_denoised_img_w);
 		}
+#elif GAUSSIAN_DENOISE
+		KernelGaussianDenoise << <blocksPerGrid2d, blockSize2d >> > (resolution, dev_denoised_img_r, dev_denoised_img_w, m_DenoiseConfig.colorWeight, m_DenoiseConfig.level);
+		std::swap(dev_denoised_img_r, dev_denoised_img_w);
+#endif
 		sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (dev_img, resolution, dev_denoised_img_r, dev_gbuffer, m_DisplayMode);
 	}
 	else

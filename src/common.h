@@ -17,6 +17,11 @@
 #define SAH_BVH 1
 #define DebugNormal 0
 
+#define A_TROUS_DENOISE 1
+#define GAUSSIAN_DENOISE 0
+
+#define EXTRACT_FIRST_ALBEDO 0
+
 #define BIT(x) (1 << (x))
 
 GPU_ONLY static constexpr float Pi				= 3.1415927f;
