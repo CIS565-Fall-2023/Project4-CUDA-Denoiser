@@ -16,7 +16,7 @@
 
 #define ERRORCHECK 1
 
-#define GAUSS_ON_ATROUS_OFF 1
+#define GAUSS_ON_ATROUS_OFF 0
 #define AVOID_EDGE 1
 #define SHOW_POS_BUFFER 0
 #define SHOW_NOR_BUFFER 0
@@ -503,7 +503,7 @@ __global__ void ATrousDenoise(float c_phi, float n_phi, float p_phi, glm::ivec2 
             glm::vec3 ntmp = gBuffer[idxtmp].nor;
             t = nval - ntmp;
             dist2 = glm::max((glm::dot(t, t) / (stepWidth * stepWidth)), 0.0f);
-            //dist2 = glm::dot(t, t);
+            dist2 = glm::dot(t, t);
             float n_w = glm::min(glm::exp(-dist2 / n_phi), 1.0f);
 
             glm::vec3 ptmp = gBuffer[idxtmp].pos;

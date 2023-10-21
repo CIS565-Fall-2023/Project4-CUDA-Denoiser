@@ -135,3 +135,25 @@ In performance comparisons, A-Trous Filtering notably surpasses Gaussian Filteri
   <img width="800" height="500" src="img/chart4.png" alt="Chart">
 </p> 
 
+### Confuse
+
+In this paper, the right implementation code is like:
+```
+glm::vec3 ntmp = gBuffer[idxtmp].nor;
+t = nval - ntmp;
+dist2 = glm::max((glm::dot(t, t) / (stepWidth * stepWidth)), 0.0f);
+float n_w = glm::min(glm::exp(-dist2 / n_phi), 1.0f);
+```
+
+But I found that just applied
+```
+glm::vec3 ntmp = gBuffer[idxtmp].nor;
+t = nval - ntmp;
+dist2 = glm::dot(t, t);
+float n_w = glm::min(glm::exp(-dist2 / n_phi), 1.0f);
+```
+will make the denoise effect better.
+
+Original Version | Simple Code Version 
+:----------:|:-----------:
+![](img/10AEdge16.png) | ![](img/10AEdge16extra.png) 
