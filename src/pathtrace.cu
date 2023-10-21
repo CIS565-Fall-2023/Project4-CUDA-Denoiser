@@ -79,14 +79,23 @@ __global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, GBuffer* gBuffe
     if (x < resolution.x && y < resolution.y) {
         int index = x + (y * resolution.x);
         
-		float normal_x = gBuffer->normals[index].x;
-		float normal_y = gBuffer->normals[index].y;
-		float normal_z = gBuffer->normals[index].z;
+		// float normal_x = gBuffer->normals[index].x;
+		// float normal_y = gBuffer->normals[index].y;
+		// float normal_z = gBuffer->normals[index].z;
+
+        // pbo[index].w = 0;
+        // pbo[index].x = normal_x * 255.0;
+        // pbo[index].y = normal_y * 255.0;
+        // pbo[index].z = normal_z * 255.0;
+
+		float position_x = gBuffer->positions[index].x;
+		float position_y = gBuffer->positions[index].y;
+		float position_z = gBuffer->positions[index].z;
 
         pbo[index].w = 0;
-        pbo[index].x = normal_x * 255.0;
-        pbo[index].y = normal_y * 255.0;
-        pbo[index].z = normal_z * 255.0;
+        pbo[index].x = position_x * 10.0;
+        pbo[index].y = position_y * 10.0;
+        pbo[index].z = position_z * 10.0;
     }
 }
 
@@ -112,6 +121,9 @@ static GBuffer* dev_gBuffer = NULL;
 static int meshSize = 0;
 static int numTrees = 0;
 static int nStreams = 4;
+
+static std::vector<float> timerBuffer;
+int timerBufferSize = 10;
 
 void InitDataContainer(GuiDataContainer* imGuiData)
 {
@@ -727,15 +739,21 @@ void pathtrace(
 		(cam.resolution.x + blockSize2dDenoise.x - 1) / blockSize2dDenoise.x,
 		(cam.resolution.y + blockSize2dDenoise.y - 1) / (blockSize2dDenoise.y));
 
+	cudaEvent_t start, stop;
+	cudaEventCreate(&start);
+	cudaEventCreate(&stop);
+	cudaEventRecord(start);
 	if (denoise) {
-		for (int i=0; i<3; i++) {
+		// iterations is the log2 of the filter size
+		int denoise_iters = log2(filterSize);
+		for (int i=0; i<denoise_iters; i++) {
 			int spacing = pow(2, i);
 			aTrousDenoise << <blocksPerGrid2dDenoise, blockSize2dDenoise >> > (
 				cam.resolution.x, cam.resolution.y, 
 				dev_image, 
 				dev_gBuffer,
 				dev_image_b, 
-				filterSize, 
+				spacing,
 				sigma_rt, 
 				sigma_n, 
 				sigma_x);
@@ -746,6 +764,25 @@ void pathtrace(
 		}
 		checkCUDAError("aTrousDenoise");
 	}
+	cudaEventRecord(stop);
+	cudaEventSynchronize(stop);
+	float milliseconds = 0;
+	cudaEventElapsedTime(&milliseconds, start, stop);
+
+	timerBuffer.push_back(milliseconds);
+	if (timerBuffer.size() > timerBufferSize)
+	{
+		timerBuffer.erase(timerBuffer.begin());
+	}
+	float average = 0;
+	for (int i = 0; i < timerBuffer.size(); i++)
+	{
+		average += timerBuffer[i];
+	}
+	average /= timerBuffer.size();
+
+
+	std::cout << "Denoise time: " << average << " ms" << std::endl;
 
 	///////////////////////////////////////////////////////////////////////////
 

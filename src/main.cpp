@@ -2,6 +2,7 @@
 #include "preview.h"
 #include <cstring>
 #include <unistd.h>
+#include <chrono>
 
 #include "../imgui/imgui.h"
 #include "../imgui/imgui_impl_glfw.h"
@@ -141,6 +142,7 @@ bool uiStateChanged() {
 }
 
 void runCuda() {
+	auto t0 = std::chrono::high_resolution_clock::now();
 	if (lastLoopIterations != ui_iterations) {
       lastLoopIterations = ui_iterations;
       camchanged = true;
@@ -209,6 +211,9 @@ void runCuda() {
         cudaDeviceReset();
         exit(EXIT_SUCCESS);
     }
+	auto t1 = std::chrono::high_resolution_clock::now();
+	auto dt = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
+	//std::cout << "Iteration " << iteration << " took " << dt << " ms" << std::endl;
 }
 
 void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
