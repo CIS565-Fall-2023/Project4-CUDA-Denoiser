@@ -47,7 +47,9 @@ The plot below shows the average frame rate with respect to the resolution for t
 ![](img/README/FPS-resolution.png)
 
 #### How varying filter sizes affect performance
-For the filter size $n$, $n$ iterations are executed in the denoising step, and a maximum of $(1+2\cdot2^n)$ neighboring pixels are weighted for each output pixel. The plot below shows the average frame rate with respect to the filter size for the weighted A-trous kernel applied on the 800x800 resolution output. Obviously, larger filter size makes the computation and rendering slower.
+For the filter size $n$, $n$ iterations are executed in the denoising step, and a maximum of $(1+2\cdot2^n)$ neighboring pixels are weighted for each output pixel.
+
+The plot below shows the average frame rate with respect to the filter size for the weighted A-trous kernel applied on the 800x800 resolution output. Obviously, larger filter size makes the computation and rendering slower.
 ![](img/README/FPS-filtersize.png)
 
 #### How visual results vary with filter size
