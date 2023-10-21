@@ -25,9 +25,9 @@ int lastLoopIterations = 0;
 bool ui_showGbuffer = false;
 bool ui_denoise = false;
 int ui_filterSize = 100;
-float ui_colorWeight = 0.572f;
-float ui_normalWeight = 0.021f;
-float ui_positionWeight = 0.789f;
+float ui_colorWeight = 0.719f;
+float ui_normalWeight = 0.631f;
+float ui_positionWeight = 0.153f;
 bool ui_saveAndExit = false;
 
 static bool camchanged = true;
@@ -116,8 +116,11 @@ void saveImage() {
 
     std::string filename = renderState->imageName;
     std::ostringstream ss;
+    ss << "../img/";
     ss << filename << "." << startTimeString << "." << samples << "samp";
     filename = ss.str();
+    cout << "Image is saved at " << filename << endl;
+    cout << "" << endl;
 
     // CHECKITOUT
     img.savePNG(filename);
