@@ -528,45 +528,6 @@ __global__ void aTrousOneIter(glm::vec3* buffer_in,  // smoothed image from last
   buffer_out[p_idx] = color_sum / weight_sum;
 }
 
-__global__ void cumulateWaveletCoefficients(glm::vec3* buffer_old,
-                                            glm::vec3* buffer_new,
-                                            glm::vec3* coefficients,
-                                            glm::ivec2 resolution) {
-  // get the pixel coordinates for this pixel
-  int x = (blockIdx.x * blockDim.x) + threadIdx.x;
-  int y = (blockIdx.y * blockDim.y) + threadIdx.y;
-
-  // out-of-bound pixels, end thread
-  if (x >= resolution.x || y >= resolution.y) {
-    return;
-  }
-
-  // index of the pixel in the 1D buffers
-  int idx = x + (y * resolution.x);
-
-  // accumulate difference in coefficients array
-  coefficients[idx] += buffer_new[idx] - buffer_old[idx];
-}
-
-__global__ void reconstruct(glm::vec3* coefficients,
-                            glm::vec3* buffer,
-                            glm::ivec2 resolution) {
-  // get the pixel coordinates for this pixel
-  int x = (blockIdx.x * blockDim.x) + threadIdx.x;
-  int y = (blockIdx.y * blockDim.y) + threadIdx.y;
-
-  // out-of-bound pixels, end thread
-  if (x >= resolution.x || y >= resolution.y) {
-    return;
-  }
-
-  // index of the pixel in the 1D buffers
-  int idx = x + (y * resolution.x);
-
-  // reconstruct by adding coefficients and final buffer
-  buffer[idx] += coefficients[idx];
-}
-
 void denoise(float color_phi, float normal_phi, float pos_phi, int filter_size) {
   // record start time
   auto start = std::chrono::high_resolution_clock::now();
