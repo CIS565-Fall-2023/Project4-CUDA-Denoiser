@@ -9,7 +9,7 @@ CUDA Denoiser For CUDA Path Tracer
 
 Result
 ====
- * Here are the denoiser results. The outcome is generally deemed acceptable when the sample count is approximately 16.
+ * Here are the denoiser results. The outcome is generally deemed acceptable when the sample count is approximately 64.
 
 |number of samples| 1 | 4 | 16 | 64 | 128|
 |:--:|:--:|:--:|:--:|:--:|:--:|
