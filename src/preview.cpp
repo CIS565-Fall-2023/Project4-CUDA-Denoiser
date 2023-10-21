@@ -256,6 +256,13 @@ void mainLoop() {
         glfwGetFramebufferSize(window, &display_w, &display_h);
         drawGui(display_w, display_h);
 
+        // update RenderState with UI values
+        scene->state.atrous.denoise = ui_denoise;
+        scene->state.atrous.filterSize = ui_filterSize;
+        scene->state.atrous.c_phi = ui_colorWeight;
+        scene->state.atrous.n_phi = ui_normalWeight;
+        scene->state.atrous.p_phi = ui_positionWeight;
+
         glfwSwapBuffers(window);
     }
     glfwDestroyWindow(window);
