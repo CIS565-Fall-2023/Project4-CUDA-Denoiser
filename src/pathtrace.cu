@@ -324,7 +324,7 @@ __global__ void generateGBuffer (
   }
 }
 
-__global__ void aTrousDenoise(const glm::vec3* in_img, glm::vec3* out_img,
+__global__ void aTrousDenoise(glm::vec3* in_img, glm::vec3* out_img,
     GBufferPixel* gBuffer, glm::ivec2 resolution, int stepwidth,
     float c_phi, float n_phi, float p_phi, float inv_iter) 
 {
@@ -356,17 +356,17 @@ __global__ void aTrousDenoise(const glm::vec3* in_img, glm::vec3* out_img,
         glm::vec3 cTmp = in_img[uvIdx];
         glm::vec3 t = (cVal - cTmp) * inv_iter;
         float dist2 = glm::dot(t, t);
-        float c_w = glm::min(exp(-(dist2) / c_phi), 1.f);
+        float c_w = glm::min(exp(-(dist2) / pow(c_phi, (float)stepwidth)), 1.f);
 
         glm::vec3 nTmp = gBuffer[uvIdx].nor;
         t = (nVal - nTmp);
-        dist2 = glm::dot(t, t);
-        float n_w = glm::min(exp(-(dist2) / n_phi), 1.f);
+        dist2 = glm::max(glm::dot(t, t), 0.f);
+        float n_w = glm::min(exp(-(dist2) / pow(n_phi, (float)stepwidth)), 1.f);
 
         glm::vec3 pTmp = gBuffer[uvIdx].pos;
         t = (pVal - pTmp);
         dist2 = glm::dot(t, t);
-        float p_w = glm::min(exp(-(dist2) / p_phi), 1.f);
+        float p_w = glm::min(exp(-(dist2) / pow(p_phi, (float)stepwidth)), 1.f);
 
         float weight = c_w * n_w * p_w;
         sum += cTmp * weight * dev_kernel[i];
@@ -487,7 +487,7 @@ void pathtrace(int frame, int iter) {
     // Assemble this iteration and apply it to the image
     dim3 numBlocksPixels = (pixelcount + blockSize1d - 1) / blockSize1d;
 	finalGather<<<numBlocksPixels, blockSize1d>>>(num_paths, dev_image, dev_paths);
-    
+
     const bool& denoise = hst_scene->state.atrous.denoise;
     if (denoise) {
         for (int i = 1; i <= hst_scene->state.atrous.filterSize; ++i) {
@@ -528,10 +528,6 @@ void pathtrace(int frame, int iter) {
     // CHECKITOUT: use dev_image as reference if you want to implement saving denoised images.
     // Otherwise, screenshots are also acceptable.
     // Retrieve image from GPU
-    glm::vec3 wtf;
-    cudaMemcpy(&wtf, &(dev_denoised1[1043]), sizeof(glm::vec3), cudaMemcpyDeviceToHost);
-    cout << wtf.x << " " << wtf.y << " " << wtf.z << endl;
-
     cudaMemcpy(hst_scene->state.image.data(), denoise ? dev_denoised1 : dev_image,
             pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
 
@@ -558,5 +554,5 @@ const Camera &cam = hst_scene->state.camera;
             (cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
 
     // Send results to OpenGL buffer for rendering
-    sendImageToPBO<<<blocksPerGrid2d, blockSize2d>>>(pbo, cam.resolution, iter, dev_image);
+    sendImageToPBO<<<blocksPerGrid2d, blockSize2d>>>(pbo, cam.resolution, iter, hst_scene->state.atrous.denoise ? dev_denoised1 : dev_image);
 }
