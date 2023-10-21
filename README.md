@@ -41,7 +41,7 @@ I recorded the visual output for different filter sizes and get the following gr
 
 |0|10|20|30|40|
 |:-----:|:-----:|:-----:|:-----:|:-----:|
-|<img src="https://github.com/Ibm510000/Project4-CUDA-Denoiser/blob/base-code/img/cornell.2023-10-21_00-28-26z.100samp.png" width="300" height="300">|<img src="https://github.com/Ibm510000/Project4-CUDA-Denoiser/blob/base-code/img/cornell.2023-10-21_00-33-12z.100samp.png" width="300" height="300">|<img src="https://github.com/Ibm510000/Project4-CUDA-Denoiser/blob/base-code/img/cornell.2023-10-21_00-33-40z.100samp.png" width="300" height="300">|<img src="https://github.com/Ibm510000/Project4-CUDA-Denoiser/blob/base-code/img/cornell.2023-10-21_00-34-03z.100samp.png" width="300" height="300">|src="https://github.com/Ibm510000/Project4-CUDA-Denoiser/blob/base-code/img/cornell.2023-10-21_00-34-22z.100samp.png" width="300" height="300">
+|<img src="https://github.com/Ibm510000/Project4-CUDA-Denoiser/blob/base-code/img/cornell.2023-10-21_00-28-26z.100samp.png" width="300" height="200">|<img src="https://github.com/Ibm510000/Project4-CUDA-Denoiser/blob/base-code/img/cornell.2023-10-21_00-33-12z.100samp.png" width="200" height="200">|<img src="https://github.com/Ibm510000/Project4-CUDA-Denoiser/blob/base-code/img/cornell.2023-10-21_00-33-40z.100samp.png" width="200" height="200">|<img src="https://github.com/Ibm510000/Project4-CUDA-Denoiser/blob/base-code/img/cornell.2023-10-21_00-34-03z.100samp.png" width="200" height="300" >| <img src="https://github.com/Ibm510000/Project4-CUDA-Denoiser/blob/base-code/img/cornell.2023-10-21_00-34-22z.100samp.png" width="200" height="300" >
 
 
 
