@@ -15,19 +15,20 @@ This project is a pathtracing denoiser that uses geometry buffers (G-buffers) to
 |---|---|---|
 |![](img/full.png)|![](img/normal.png)|![](img/dist.png)|
 
-* the A-trous kernel and its iterations
+* The A-trous filter denoiser
 
-<img width="300" alt="1" src="img/bunny40.png"><img width="300" alt="1" src="img/denoise40.png">
-
+<img width="450" alt="1" src="img/bunny40.png"><img width="450" alt="1" src="img/denoise40.png">
+<br/>
 
 ## Performance Analysis
+<br/>
 #### how much time denoising adds to your renders & how varying filter sizes affect performance
 
 | |  filter size = 10 | filter size = 40 | filter size = 80 |
 |---|---|---|---|
 | Denoise time recorded| ![](img/time10.png)|![](img/time40.png)|![](img/time80.png)|
 |Denoise time (average)| 2.83ms|6.62ms|8.56ms|
-
+<br/>
 
 #### how denoising influences the number of iterations needed to get an "acceptably smooth" result
 
@@ -35,7 +36,7 @@ This project is a pathtracing denoiser that uses geometry buffers (G-buffers) to
 |---|---|---|
 |Acceptable image | ![](img/bunny500.png)|![](img/denoise40.png)|
 |Iterations| 500 |40|
-
+<br/>
 
 #### how denoising at different resolutions impacts runtime
 
@@ -44,14 +45,14 @@ The time needed for running the denoise roughly scale with the image resolution.
 |---|---|---|
 | Denoise time recorded| ![](img/time80@400.png)|![](img/time80.png)|
 |Denoise time (average)| 4.90ms |8.56ms|
-
+<br/>
 
 #### how visual results vary with filter size
 As the filter size increases, the degree of improvement in image optimization caused by the filter size increase gradually diminishes.
 |  filter size = 4  | filter size = 40 | filter size = 80 | 
 |---|---|---|
 |![](img/size4.png)|![](img/size40.png)|![](img/denoise_on_diff.png)|
-
+<br/>
 
 #### how effective/ineffective is this method with different material types
 
@@ -61,7 +62,7 @@ The method is very effective for diffuse and specular materials, but less effect
 |---|---|---|---|
 |Denoiser Off| ![](img/denoise_off_diff.png)|![](img/denoise_off_spec.png)|![](img/denoise_off_glass.png)|
 |Denoiser On | ![](img/denoise_on_diff.png) |![](img/denoise_on_spec.png) |![](img/denoise_on_glass.png) |
-
+<br/>
 
 #### how do results compare across different scenes
 
