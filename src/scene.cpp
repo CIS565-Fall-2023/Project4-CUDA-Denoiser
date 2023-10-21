@@ -84,6 +84,12 @@ int Scene::loadGeom(string objectid) {
         newGeom.inverseTransform = glm::inverse(newGeom.transform);
         newGeom.invTranspose = glm::inverseTranspose(newGeom.transform);
 
+        if (newGeom.materialid == 0)
+        {
+            this->lights.push_back(newGeom);
+            this->lightNum++;
+        }
+
         geoms.push_back(newGeom);
         return 1;
     }
