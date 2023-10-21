@@ -26,6 +26,7 @@
 #define DEBUG_NORM 0
 #define DEBUG_POS 0
 #define DEBUG_BLUR 0
+#define EARLY_TEX 0
 
 #define FILENAME (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 #define checkCUDAError(msg) checkCUDAErrorFn(msg, FILENAME, __LINE__)
@@ -68,15 +69,40 @@ __global__ void updateMaterialKey(int num_paths, ShadeableIntersection* in_inter
 }
 
 
-// Add the current iteration's output to the overall image
-__global__ void finalGather(int nPaths, float iter, glm::vec3* image, PathSegment* iterationPaths)
+// Add the current iteration's output to the overall image->light
+__global__ void finalGather(int nPaths, float iter, glm::vec3* inout_lt, PathSegment* iterationPaths)
 {
 	int index = (blockIdx.x * blockDim.x) + threadIdx.x;
 
 	if (index < nPaths)
 	{
 		PathSegment iterationPath = iterationPaths[index];
-		image[iterationPath.pixelIndex] = glm::mix(image[iterationPath.pixelIndex],iterationPath.color,1.f/iter);
+		inout_lt[iterationPath.pixelIndex] = glm::mix(inout_lt[iterationPath.pixelIndex],iterationPath.color,1.f/iter);
+	}
+}
+
+__global__ void applyAlbedo(
+	glm::ivec2 resolution
+	, glm::vec3* in_lt
+	, GBuffer* in_gbuff
+	, glm::vec3* out_img
+) {
+	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+
+	if (x < resolution.x && y < resolution.y) {
+		int idx = x + (y * resolution.x);
+		GBuffer gval = in_gbuff[idx];
+#if DEBUG_NORM
+		out_img[idx] = gval.norm * 0.5f + glm::vec3(0.5f);
+		return;
+#endif
+
+#if DEBUG_POS
+		out_img[idx] = gval.pos;
+		return;
+#endif
+		out_img[idx] = in_lt[idx] * gval.albedo;
 	}
 }
 
@@ -88,8 +114,8 @@ __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution, glm::vec3* im
 	if (x < resolution.x && y < resolution.y) {
 		int index = x + (y * resolution.x);
 		
-		//glm::vec3 pix = image[index];
-		glm::vec3 pix = glm::pow(image[index]/(image[index] + 1.f),glm::vec3(1.f/2.2));
+		glm::vec3 pix = image[index];
+		pix = glm::pow(pix/(pix + 1.f),glm::vec3(1.f/2.2));
 	
 
 		glm::ivec3 color;
@@ -188,6 +214,9 @@ void PathTracer::pathtraceInit(Scene* scene)
 	cudaMemset(dev_gImg0.get(), 0, pixelcount * sizeof(glm::vec3));
 	dev_gImg1.malloc(pixelcount, "Malloc dev_gImg error");
 	cudaMemset(dev_gImg1.get(), 0, pixelcount * sizeof(glm::vec3));
+
+	dev_light.malloc(pixelcount, "Malloc dev_light error");
+	cudaMemset(dev_light.get(), 0, pixelcount * sizeof(glm::vec3));
 
 	checkCUDAError("pathtraceInit");
 }
@@ -353,11 +382,25 @@ __global__ void processPBR(
 
 	//fix strange artifact
 	seg.ray.origin += 0.01f * seg.ray.direction;
-
-	glm::vec3 bsdf = getBSDF(seg.ray.direction, wo, intersect.surfaceUV, material,textures);
+#if EARLY_TEX
+	glm::vec3 bsdf = getBSDF(seg.ray.direction, wo, intersect.surfaceUV, material, textures);
 	//           albedo           absdot
 	seg.color *= (bsdf * glm::clamp(abs(glm::dot(normal, seg.ray.direction)), 0.f, 1.f) / pdf);
-	
+#else
+	if (depth != 0) {
+		glm::vec3 bsdf = getBSDF(seg.ray.direction, wo, intersect.surfaceUV, material, textures);
+		//           albedo           absdot
+		seg.color *= (bsdf * glm::clamp(abs(glm::dot(normal, seg.ray.direction)), 0.f, 1.f) / pdf);
+	}
+	else {
+		if (material.hasReflective) {
+			seg.color *= (glm::clamp(abs(glm::dot(normal, seg.ray.direction)), 0.f, 1.f) / pdf);
+		}
+		else {
+			seg.color *= (INV_PI * glm::clamp(abs(glm::dot(normal, seg.ray.direction)), 0.f, 1.f) / pdf);
+		}
+	}
+#endif // EARLY_TEX	
 }
 
 
@@ -387,6 +430,11 @@ __global__ void processGBuffer(
 	GBuffer& gbuffer = out_gbuffer[seg.pixelIndex];
 	gbuffer.norm = glm::mix(gbuffer.norm,normal,1.f/iter);
 	gbuffer.pos = glm::mix(gbuffer.pos ,intersect.t * seg.ray.direction + seg.ray.origin, 1.f/iter);
+	if (material.textureId != -1) {
+		gbuffer.albedo = glm::mix(gbuffer.albedo, glm::pow(texture2D(intersect.surfaceUV, in_textures[material.textureId]),glm::vec3(2.2)), 1.f / iter);
+	}else {
+		gbuffer.albedo = glm::mix( gbuffer.albedo, material.color, 1.f / iter);
+	}
 }
 
 //make denosiser
@@ -448,15 +496,7 @@ __global__ void denoise(
 	return;
 #endif
 
-#if DEBUG_NORM
-	out_c[idx] = gval.norm * 0.5f + glm::vec3(0.5f);
-	return;
-#endif
 
-#if DEBUG_POS
-	out_c[idx] = gval.pos * 0.2f;
-	return;
-#endif
 
 	for (int i = -2;i <= 2;++i) {
 		for (int j = -2;j <= 2;++j) {
@@ -520,6 +560,7 @@ void PathTracer::pathtrace(uchar4* pbo, int frame, int iter)
 	glm::vec3* dev_image = this->dev_img.get();
 	BVHNode* dev_bvh = this->dev_bvh.get();
 	int num_bvh = this->dev_bvh.size();
+	glm::vec3* dev_light = this->dev_light.get();
 	cudaTextureObject_t* dev_texObjs = this->dev_texObjs.get();
 	float lenRadius = m_guiData->lensRadius;
 	float focusLen = m_guiData->focusLength;
@@ -552,7 +593,7 @@ void PathTracer::pathtrace(uchar4* pbo, int frame, int iter)
 			);
 		checkCUDAError("trace one bounce");
 		cudaDeviceSynchronize();
-		if (m_guiData->ui_denoise) {
+		//if (m_guiData->ui_denoise) {
 			if (depth == 0) {
 				processGBuffer << <numblocksPathSegmentTracing, blockSize1d >> > (
 					iter
@@ -566,7 +607,7 @@ void PathTracer::pathtrace(uchar4* pbo, int frame, int iter)
 				checkCUDAError("trace gbuffer");
 				cudaDeviceSynchronize();
 			}
-		}
+		//}
 		processPBR << <numblocksPathSegmentTracing, blockSize1d >> > (
 			iter, depth
 			, num_paths
@@ -596,12 +637,12 @@ void PathTracer::pathtrace(uchar4* pbo, int frame, int iter)
 	//   for you.
 
 	dim3 numBlocksPixels = (pixelcount + blockSize1d - 1) / blockSize1d;
-	
+	glm::vec3* o_dColor = dev_gImg0.get();
+	glm::vec3* i_dColor = dev_gImg1.get();
+	GBuffer* i_gbuffer = dev_gbuffer.get();
+#if EARLY_TEX
 	finalGather << <numBlocksPixels, blockSize1d >> > (pixelcount, iter, dev_image, dev_donePaths);
 	if (m_guiData->ui_denoise) {
-		glm::vec3* o_dColor = dev_gImg0.get();
-		glm::vec3* i_dColor = dev_gImg1.get();
-		GBuffer* i_gbuffer = dev_gbuffer.get();
 		//gatherGBufferColor << <numBlocksPixels, blockSize1d >> > (pixelcount, dev_donePaths, o_dColor);
 		cudaMemcpy(o_dColor, dev_image, pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToDevice);
 		for (int i = 0;i < m_guiData->ui_filterSize;++i) {
@@ -609,46 +650,53 @@ void PathTracer::pathtrace(uchar4* pbo, int frame, int iter)
 			swap(o_dColor, i_dColor);
 			denoise << <blocksPerGrid2d, blockSize2d >> > (cam.resolution.x, cam.resolution.y, i_gbuffer, offset, m_guiData->ui_colorWeight, m_guiData->ui_normalWeight, m_guiData->ui_positionWeight, i_dColor, o_dColor);
 		}
-		// Send results to OpenGL buffer for rendering
 		sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, o_dColor, iter);
 
 		// Retrieve image from GPU
-		cudaMemcpy(hst_scene->state.image.data(), o_dColor,
-			pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
+		cudaMemcpy(hst_scene->state.image.data(), o_dColor, pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
 	}
 	else {
 		// Send results to OpenGL buffer for rendering
 		sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, dev_image, iter);
 
 		// Retrieve image from GPU
-		cudaMemcpy(hst_scene->state.image.data(), dev_image,
-			pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
+		cudaMemcpy(hst_scene->state.image.data(), dev_image, pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
 	}
+#else
+	finalGather << <numBlocksPixels, blockSize1d >> > (pixelcount, iter, dev_light, dev_donePaths);
+	if (m_guiData->ui_denoise) {
+		//gatherGBufferColor << <numBlocksPixels, blockSize1d >> > (pixelcount, dev_donePaths, o_dColor);
+		cudaMemcpy(o_dColor, dev_light, pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToDevice);
+		for (int i = 0;i < m_guiData->ui_filterSize;++i) {
+			int offset = 1 << i;
+			swap(o_dColor, i_dColor);
+			denoise << <blocksPerGrid2d, blockSize2d >> > (cam.resolution.x, cam.resolution.y, i_gbuffer, offset, m_guiData->ui_colorWeight, m_guiData->ui_normalWeight, m_guiData->ui_positionWeight, i_dColor, o_dColor);
+		}
+		applyAlbedo << <blocksPerGrid2d, blockSize2d >> > (cam.resolution, o_dColor, i_gbuffer, dev_image);
+		// Send results to OpenGL buffer for rendering
+		//sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, dev_image, iter);
+
+		//// Retrieve image from GPU
+		//cudaMemcpy(hst_scene->state.image.data(), o_dColor,
+		//	pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
+	}
+	else {
+
+		applyAlbedo << <blocksPerGrid2d, blockSize2d >> > (cam.resolution, dev_light, i_gbuffer, dev_image);
+	}
+	// Send results to OpenGL buffer for rendering
+	sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, dev_image, iter);
+	// Retrieve image from GPU
+	cudaMemcpy(hst_scene->state.image.data(), dev_image,
+		pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
+#endif // EARLY_TEX
+
+
+	//}
 	///////////////////////////////////////////////////////////////////////////
 
 
 	checkCUDAError("pathtrace");
 }
 
-// CHECKITOUT: this kernel "post-processes" the gbuffer/gbuffers into something that you can visualize for debugging.
-void showGBuffer(uchar4* pbo) {
-    const Camera &cam = hst_scene->state.camera;
-    const dim3 blockSize2d(8, 8);
-    const dim3 blocksPerGrid2d(
-            (cam.resolution.x + blockSize2d.x - 1) / blockSize2d.x,
-            (cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
-
-    // CHECKITOUT: process the gbuffer results and send them to OpenGL buffer for visualization
-    gbufferToPBO<<<blocksPerGrid2d, blockSize2d>>>(pbo, cam.resolution, dev_gBuffer);
-}
-
-void showImage(uchar4* pbo, int iter) {
-const Camera &cam = hst_scene->state.camera;
-    const dim3 blockSize2d(8, 8);
-    const dim3 blocksPerGrid2d(
-            (cam.resolution.x + blockSize2d.x - 1) / blockSize2d.x,
-            (cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
-
-    // Send results to OpenGL buffer for rendering
-    sendImageToPBO<<<blocksPerGrid2d, blockSize2d>>>(pbo, cam.resolution, iter, dev_image);
-}
+// CHECKITOUT: this kernel "post-processes" the gbuffer/gbuffers into something that you can visualize for debugging

@@ -91,5 +91,6 @@ struct Mesh {
 struct GBuffer {
     glm::vec3 norm;
     glm::vec3 pos;
+    glm::vec3 albedo;
 };
 

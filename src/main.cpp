@@ -26,6 +26,8 @@ int main(int argc, char** argv) {
 
 	string sceneFilePath = SCENE_PATH;
 	sceneFilePath += "planet.txt";
+	//sceneFilePath += "test.txt";//cornel
+	//sceneFilePath += "ceiling_cornel.txt";
 
 	auto& app = Application::getInstance();
 

@@ -330,14 +330,14 @@ void Application::renderImGui()
 	
 	ImGui::Separator();
 
-	if (ImGui::SliderInt("Iterations", &m_guiData->ui_iterations, 1, 500))m_iteration = 0;
+	if (ImGui::SliderInt("Iterations", &m_guiData->ui_iterations, 1, 128))m_iteration = 0;
 	
 	if (ImGui::Checkbox("Denoise", &m_guiData->ui_denoise))m_iteration = 0;
 
 	if (ImGui::SliderInt("Filter Size", &m_guiData->ui_filterSize, 1, 5))m_iteration = 0;
-	if(ImGui::SliderFloat("Color Weight", &m_guiData->ui_colorWeight, 0.0f, 10.0f))m_iteration = 0;
-	if(ImGui::SliderFloat("Normal Weight", &m_guiData->ui_normalWeight, 0.0f, 10.0f))m_iteration = 0;
-	if (ImGui::SliderFloat("Position Weight", &m_guiData->ui_positionWeight, 0.0f, 10.0f))m_iteration = 0;
+	if(ImGui::SliderFloat("Color Weight", &m_guiData->ui_colorWeight, 0.0f, 5.0f))m_iteration = 0;
+	if(ImGui::SliderFloat("Normal Weight", &m_guiData->ui_normalWeight, 0.0f, 5.0f))m_iteration = 0;
+	if (ImGui::SliderFloat("Position Weight", &m_guiData->ui_positionWeight, 0.0f, 5.0f))m_iteration = 0;
 
 	ImGui::Separator();
 
@@ -391,7 +391,7 @@ std::string Application::getOutputImageName()
 {
 	std::string filename = m_scene.get()->state.imageName;
 	std::ostringstream ss;
-	ss<< ROOT_PATH << "/img/" << filename << "." << currentTimeString() << "." << m_iteration << "samp";
+	ss<< ROOT_PATH << "/md_img/" << filename << "." << currentTimeString() << "." << m_iteration << "samp";
 	filename = ss.str();
 	return filename;
 }

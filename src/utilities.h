@@ -25,7 +25,7 @@ public:
 
     int ui_iterations = 100;
     bool ui_denoise = false;
-    int ui_filterSize = 1;
+    int ui_filterSize = 3;
     float ui_colorWeight = 0.f;
     float ui_normalWeight = 0.f;
     float ui_positionWeight = 0.f;
