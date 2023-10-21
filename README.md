@@ -63,7 +63,7 @@ Denoising will give an "acceptably smooth" result at lower iteration as shown ab
 ![](./img/filter_size.png)
 ![](./img/resolution.png)
 
-Denoising will add more time to the renders. For A-tous, it usually slow down the renderer about 10-20FPS. For Guassian, it slower the renderer a lot especially when the filter size is large. Larger filter size will genuinely add more time to the renders. For A-Trous, it adds slightly more time since number of levels need to compute did not increase much as the filter size goes larger and larger. However, for guassian, FPS get a huge markdown due to increasing size of kernel. For resolution, smaller resolution will give better runtime for both unfiltered and denoised image. Denoising will be a good technique for smaller resolution since the image will be blurry anyway for small image, this gives a better approximation for image. 
+Denoising will add more time to the renders. For A-Trous, it usually slow down the renderer about 10-20FPS. For Guassian, it slower the renderer a lot especially when the filter size is large. Larger filter size will genuinely add more time to the renders. For A-Trous, it adds slightly more time since number of levels need to compute did not increase much as the filter size goes larger and larger. However, for guassian, FPS get a huge markdown due to increasing size of kernel. For resolution, smaller resolution will give better runtime for both unfiltered and denoised image. Denoising will be a good technique for smaller resolution since the image will be blurry anyway for small image, this gives a better approximation for image. 
 
 #### Denoising Visual effect - Filter size, material type, etc.
 
@@ -98,3 +98,6 @@ Cornell_ceiling_light:
 <img src="./img/CL_21_n.png" style="display:inline;" width=300px>
 <img src="./img/CL_21_d.png" style="display:inline;" width=300px>
 </div>
+
+Guassian filter-a Trous filter
+As I observed, I did not find any obvious visual difference between these two filters. 
