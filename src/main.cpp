@@ -14,6 +14,7 @@ static bool rightMousePressed = false;
 static bool middleMousePressed = false;
 static double lastX;
 static double lastY;
+static int image_num = 0;
 
 // CHECKITOUT: simple UI parameters.
 // Search for any of these across the whole project to see how these are used,
@@ -112,9 +113,9 @@ void saveImage() {
 
     std::string filename = renderState->imageName;
     std::ostringstream ss;
-    ss << filename << "." << startTimeString << "." << samples << "samp";
+    ss << filename << "." << startTimeString << "." << samples << "samp" << image_num;
     filename = ss.str();
-
+    image_num++;
     // CHECKITOUT
     img.savePNG(filename);
     //img.saveHDR(filename);  // Save a Radiance HDR file
@@ -164,11 +165,11 @@ void runCuda() {
         int frame = 0;
         pathtrace(frame, iteration);
     }
-
+/*
     if (ui_showGbuffer) {
       showGBuffer(pbo_dptr);
     }
-    else if (ui_denoise)
+    else */if (ui_denoise)
     {
       showDenoise(pbo_dptr, iteration, ui_filterSize, ui_colorWeight, ui_normalWeight, ui_positionWeight);
     }

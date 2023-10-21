@@ -579,8 +579,9 @@ void showDenoise(uchar4* pbo, int iteration, int ui_filterSize, float ui_colorWe
     checkCUDAError("denoise2");
 
   }
-
-  // CHECKITOUT: process the gbuffer results and send them to OpenGL buffer for visualization
+  cudaMemcpy(hst_scene->state.image.data(), dev_denoise_1,
+      cam.resolution.x * cam.resolution.y * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
+    // CHECKITOUT: process the gbuffer results and send them to OpenGL buffer for visualization
   //gbufferToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, dev_gBuffer);
   // maybe no iteration
   //printf("testdenoise 3\n");
