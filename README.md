@@ -8,9 +8,9 @@ Han Wang
 Tested on: Windows 11, 11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz 22GB, GTX 3070 Laptop GPU
 
 
-|with DOF|without DOF|
+|without Denoize|with Denoize|
 |:-----:|:-----:|
-|<img src="https://github.com/Ibm510000/Project4-CUDA-Denoiser/blob/base-code/img/cornell.2023-10-19_01-52-06z.181samp.png" width="300" height="300">|<img src="https://github.com/Ibm510000/Project3-CUDA-Path-Tracer/blob/main/img/cornell.2023-10-20_23-54-52z.277samp.png" width="300" height="300">
+|<img src="https://github.com/Ibm510000/Project4-CUDA-Denoiser/blob/base-code/img/cornell.2023-10-19_01-52-06z.181samp.png" width="300" height="300">|<img src="https://github.com/Ibm510000/Project4-CUDA-Denoiser/blob/base-code/img/cornell.2023-10-20_23-54-52z.277samp.png" width="300" height="300">
 ### Analysis
 
 *DO NOT* leave the README to the last minute! It is a crucial part of the
