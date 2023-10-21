@@ -21,7 +21,7 @@ Also, based on my test I got the following graph amount of the resolution and ru
 
 |Graph1|
 |:-----:|
-|<img src="https://github.com/Ibm510000/Project4-CUDA-Denoiser/blob/base-code/img/denoize_resolution.png" width="500" height="500">
+|<img src="https://github.com/Ibm510000/Project4-CUDA-Denoiser/blob/base-code/img/denoize_resolution.png" width="700" height="500">
 
 
 
