@@ -10,6 +10,7 @@ Project 4 CUDA Denoiser
 This project is a pathtracing denoiser that uses geometry buffers (G-buffers) to guide a smoothing filter. The technique is based on the paper "Edge-Avoiding A-Trous Wavelet Transform for fast Global Illumination Filtering," by Dammertz, Sewtz, Hanika, and Lensch.
 
 * G-Buffers for normals and positions
+
 |  the scene  | per-pixel normals | per-pixel positions (scaled down) | 
 |---|---|---|
 |![](img/full.png)|![](img/normal.png)|![](img/dist.png)|
@@ -23,6 +24,7 @@ This project is a pathtracing denoiser that uses geometry buffers (G-buffers) to
 
 ## Performance Analysis
 * how much time denoising adds to your renders & how varying filter sizes affect performance
+
 | |  filter size = 10 | filter size = 40 | filter size = 80 |
 |---|---|---|
 | Denoise time recorded| ![](img/time10.png)|![](img/time40.png)|![](img/time80.png)|
