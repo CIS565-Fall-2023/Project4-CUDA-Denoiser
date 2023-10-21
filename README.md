@@ -28,7 +28,6 @@ This project is a pathtracing denoiser that uses geometry buffers (G-buffers) to
 | |  filter size = 10 | filter size = 40 | filter size = 80 |
 |---|---|---|---|
 | Denoise time recorded| ![](img/time10.png)|![](img/time40.png)|![](img/time80.png)|
-|---|---|---|---|
 |Denoise time (average)| 2.83ms|6.62ms|8.56ms|
 
 * how denoising at different resolutions impacts runtime
@@ -37,5 +36,24 @@ The time needed for running the denoise roughly scale with the image resolution.
 | |  resolution = 400 * 400 | resolution = 800 * 800| 
 |---|---|---|
 | Denoise time recorded| ![](img/time80@400.png)|![](img/time80.png)|
-|---|---|---|
 |Denoise time (average)| 4.90ms |8.56ms|
+
+* how visual results vary with filter size
+As the filter size increases, the degree of improvement in image optimization caused by the filter size increase gradually diminishes.
+|  filter size = 4  | filter size = 40 | filter size = 80 | 
+|---|---|---|
+|![](img/size4.png)|![](img/size40.png)|![](img/denoise_on_diff.png)|
+
+
+* how effective/ineffective is this method with different material types
+The method is very effective for diffuse and specular materials, but less effective for glass materials. The refraction material generates extremely light dot noise that is hard to be blured by the filter.
+| | Diffuse | Perfect Specular | Specular + Refraction (Glass) | 
+|---|---|---|---|
+|Denoiser Off|![](img/denoise_off_diff.png)|![](img/denoise_off_spec.png)|![](img/denoise_off_glass.png)|
+|Denoiser On|![](img/denoise_on_diff.png)|![](img/denoise_on_spec.png)|![](img/denoise_on_glass.png)|
+
+* how do results compare across different scenes
+The method is more effective for the regular cornell box light than for the cornell box with the ceiling light. There are extremely light dot noises that are similar to the ones showed up in scenes with glass materials. The filter is not able to deal with too many dots with very high color value.
+| cornell | cornell_ceiling_light | 
+|---|---|
+|![](img/no_ceiling.png)|![](img/ceiling.png)|
