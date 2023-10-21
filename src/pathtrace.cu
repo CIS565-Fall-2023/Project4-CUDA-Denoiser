@@ -512,12 +512,12 @@ __global__ void aTrousOneIter(glm::vec3* buffer_in,  // smoothed image from last
     diff = q_normal - p_normal;
     dist2 = dot(diff, diff);
     //dist2 = glm::max(glm::dot(diff, diff) / (stepwidth * stepwidth), 0.0f);
-    float weight_normal = min(exp(-dist2 / normal_phi * normal_phi), 1.0f);
+    float weight_normal = min(exp(-dist2 / (normal_phi * normal_phi)), 1.0f);
 
     glm::vec3 q_pos = gbuffer[q_idx].pos;
     diff = q_pos - p_pos;
     dist2 = dot(diff, diff);
-    float weight_pos = min(exp(-dist2 / pos_phi * pos_phi), 1.0f);
+    float weight_pos = min(exp(-dist2 / (pos_phi * pos_phi)), 1.0f);
 
     // total weight
     float weight = weight_color * weight_normal * weight_pos;
@@ -568,6 +568,8 @@ __global__ void reconstruct(glm::vec3* coefficients,
 }
 
 void denoise(float color_phi, float normal_phi, float pos_phi, int filter_size) {
+  // record start time
+  auto start = std::chrono::high_resolution_clock::now();
   // count the number of pixels again
   const Camera& cam = hst_scene->state.camera;
   const int pixelcount = cam.resolution.x * cam.resolution.y;
@@ -578,10 +580,7 @@ void denoise(float color_phi, float normal_phi, float pos_phi, int filter_size) 
 
   // copy raw image to smooth buffer for first iteration
   cudaMemcpy(dev_smooth_buffer, dev_image, pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToDevice);
-  //cudaMemset(dev_wavelet_coefficients, 0, pixelcount * sizeof(glm::vec3));
 
-  // record start time
-  auto start = std::chrono::high_resolution_clock::now();
 
   // repeatedly call kernel
   for (int iter = 0; (1 << iter) * 4 + 1 <= filter_size; iter++) {
@@ -604,7 +603,7 @@ void denoise(float color_phi, float normal_phi, float pos_phi, int filter_size) 
   // record end time
   auto end = std::chrono::high_resolution_clock::now();
   auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-  std::cout << "Denoising took " << duration << " microseconds to execute.\n";
+  std::cout << duration << std::endl;
 
   cudaMemcpy(hst_scene->state.image.data(), dev_smooth_buffer, pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
 }
