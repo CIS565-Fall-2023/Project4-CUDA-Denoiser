@@ -2,7 +2,6 @@ Project 4 CUDA Denoiser - Instructions
 =======================================
 
 This is due **Friday October 20th** at 11:59pm EST.
-
 **Summary:**
 
 In this project, you'll implement a pathtracing denoiser that uses geometry buffers (G-buffers) to guide a smoothing filter.
@@ -85,11 +84,15 @@ Requirements
 
 **Ask in Ed for clarifications.**
 
+
 ## Part 1 - Read!
+
 
 One meta-goal for this project is to help you gain some experience in reading technical papers and implementing their concepts. This is an important skill in graphics software engineering, and will also be helpful for your final projects.
 
+
 For part one, try to skim the paper, and then read through it in depth a couple times: https://jo.dreggn.org/home/2010_atrous.pdf
+
 
 Try to look up anything that you don't understand, and feel free to discuss with your fellow students on Ed. We were also able to locate presentation slides for this paper that may be helpful: https://www.highperformancegraphics.org/previous/www_2010/media/RayTracing_I/HPG2010_RayTracing_I_Dammertz.pdf
 
@@ -164,7 +167,9 @@ Implement methods to store positions and normals more compactly. Two places to s
 
 Be sure to provide performance comparison numbers between optimized and unoptimized implementations.
 
+
 ## Comparing A-trous and Gaussian filtering
+
 
 Dammertz-et-al mention in their section 2.2 that A-trous filtering is a means for approximating gaussian filtering. Implement gaussian filtering and compare with A-trous to see if one method is significantly faster. Also note any visual differences in your results.
 
@@ -175,11 +180,15 @@ Filtering techniques can be somewhat memory-expensive - for each pixel, the tech
 Be sure to provide performance comparison numbers between implementations with and without shared memory.
 Also pay attention to how shared memory use impacts the block size for your kernels, and how this may change as the filter width changes.
 
+
 ## Implement Temporal Sampling
+
 
 High-performance raytracers in dynamic applications (like games, or real-time visualization engines) now often use temporal sampling, borrowing and repositioning samples from previous frames so that each frame effectively only computes 1 sample-per-pixel but can denoise from many frames.
 
+
 This will require additional buffers, as well as reprojection code to move samples from where they were in a previous frame to the current frame.
+
 
 Note that our basic pathtracer doesn't do animation, so you will also need to implement some kind of dynamic aspect in your scene - this may be as simple as an automated panning camera, or as complex as translating models.
 
