@@ -43,6 +43,10 @@ I recorded the visual output for different filter sizes and get the following gr
 |:-----:|:-----:|:-----:|:-----:|:-----:|
 |<img src="https://github.com/Ibm510000/Project4-CUDA-Denoiser/blob/base-code/img/cornell.2023-10-21_00-28-26z.100samp.png" width="200" height="200">|<img src="https://github.com/Ibm510000/Project4-CUDA-Denoiser/blob/base-code/img/cornell.2023-10-21_00-33-12z.100samp.png" width="200" height="200">|<img src="https://github.com/Ibm510000/Project4-CUDA-Denoiser/blob/base-code/img/cornell.2023-10-21_00-33-40z.100samp.png" width="200" height="200">|<img src="https://github.com/Ibm510000/Project4-CUDA-Denoiser/blob/base-code/img/cornell.2023-10-21_00-34-03z.100samp.png" width="200" height="200" >| <img src="https://github.com/Ibm510000/Project4-CUDA-Denoiser/blob/base-code/img/cornell.2023-10-21_00-34-22z.100samp.png" width="200" height="200" >
 
+|50|60|70|80|90|
+|:-----:|:-----:|:-----:|:-----:|:-----:|
+|<img src="https://github.com/Ibm510000/Project4-CUDA-Denoiser/blob/base-code/img/cornell.2023-10-21_00-34-56z.100samp.png" width="200" height="200">|<img src="https://github.com/Ibm510000/Project4-CUDA-Denoiser/blob/base-code/img/cornell.2023-10-21_00-35-21z.97samp.png" width="200" height="200">|<img src="https://github.com/Ibm510000/Project4-CUDA-Denoiser/blob/base-code/img/cornell.2023-10-21_00-35-21z.100samp.png" width="200" height="200">|<img src="https://github.com/Ibm510000/Project4-CUDA-Denoiser/blob/base-code/img/cornell.2023-10-21_00-35-44z.100samp.png" width="200" height="200" >| <img src="https://github.com/Ibm510000/Project4-CUDA-Denoiser/blob/base-code/img/cornell.2023-10-21_00-36-01z.100samp.png" width="200" height="200" >
+
 
 
 
