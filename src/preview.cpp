@@ -51,109 +51,109 @@ void initVAO(void) {
         1.0f, 0.0f
     };
 
-    GLushort indices[] = { 0, 1, 3, 3, 1, 2 };
+	GLushort indices[] = { 0, 1, 3, 3, 1, 2 };
 
-    GLuint vertexBufferObjID[3];
-    glGenBuffers(3, vertexBufferObjID);
+	GLuint vertexBufferObjID[3];
+	glGenBuffers(3, vertexBufferObjID);
 
-    glBindBuffer(GL_ARRAY_BUFFER, vertexBufferObjID[0]);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-    glVertexAttribPointer((GLuint)positionLocation, 2, GL_FLOAT, GL_FALSE, 0, 0);
-    glEnableVertexAttribArray(positionLocation);
+	glBindBuffer(GL_ARRAY_BUFFER, vertexBufferObjID[0]);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+	glVertexAttribPointer((GLuint)positionLocation, 2, GL_FLOAT, GL_FALSE, 0, 0);
+	glEnableVertexAttribArray(positionLocation);
 
-    glBindBuffer(GL_ARRAY_BUFFER, vertexBufferObjID[1]);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(texcoords), texcoords, GL_STATIC_DRAW);
-    glVertexAttribPointer((GLuint)texcoordsLocation, 2, GL_FLOAT, GL_FALSE, 0, 0);
-    glEnableVertexAttribArray(texcoordsLocation);
+	glBindBuffer(GL_ARRAY_BUFFER, vertexBufferObjID[1]);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(texcoords), texcoords, GL_STATIC_DRAW);
+	glVertexAttribPointer((GLuint)texcoordsLocation, 2, GL_FLOAT, GL_FALSE, 0, 0);
+	glEnableVertexAttribArray(texcoordsLocation);
 
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vertexBufferObjID[2]);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vertexBufferObjID[2]);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
 }
 
 GLuint initShader() {
-    const char *attribLocations[] = { "Position", "Texcoords" };
-    GLuint program = glslUtility::createDefaultProgram(attribLocations, 2);
-    GLint location;
+	const char* attribLocations[] = { "Position", "Texcoords" };
+	GLuint program = glslUtility::createDefaultProgram(attribLocations, 2);
+	GLint location;
 
-    //glUseProgram(program);
-    if ((location = glGetUniformLocation(program, "u_image")) != -1) {
-        glUniform1i(location, 0);
-    }
+	//glUseProgram(program);
+	if ((location = glGetUniformLocation(program, "u_image")) != -1) {
+		glUniform1i(location, 0);
+	}
 
-    return program;
+	return program;
 }
 
 void deletePBO(GLuint* pbo) {
-    if (pbo) {
-        // unregister this buffer object with CUDA
-        cudaGLUnregisterBufferObject(*pbo);
+	if (pbo) {
+		// unregister this buffer object with CUDA
+		cudaGLUnregisterBufferObject(*pbo);
 
-        glBindBuffer(GL_ARRAY_BUFFER, *pbo);
-        glDeleteBuffers(1, pbo);
+		glBindBuffer(GL_ARRAY_BUFFER, *pbo);
+		glDeleteBuffers(1, pbo);
 
-        *pbo = (GLuint)NULL;
-    }
+		*pbo = (GLuint)NULL;
+	}
 }
 
 void deleteTexture(GLuint* tex) {
-    glDeleteTextures(1, tex);
-    *tex = (GLuint)NULL;
+	glDeleteTextures(1, tex);
+	*tex = (GLuint)NULL;
 }
 
 void cleanupCuda() {
-    if (pbo) {
-        deletePBO(&pbo);
-    }
-    if (displayImage) {
-        deleteTexture(&displayImage);
-    }
+	if (pbo) {
+		deletePBO(&pbo);
+	}
+	if (displayImage) {
+		deleteTexture(&displayImage);
+	}
 }
 
 void initCuda() {
-    cudaGLSetGLDevice(0);
+	cudaGLSetGLDevice(0);
 
-    // Clean up on program exit
-    atexit(cleanupCuda);
+	// Clean up on program exit
+	atexit(cleanupCuda);
 }
 
 void initPBO() {
-    // set up vertex data parameter
-    int num_texels = width * height;
-    int num_values = num_texels * 4;
-    int size_tex_data = sizeof(GLubyte) * num_values;
+	// set up vertex data parameter
+	int num_texels = width * height;
+	int num_values = num_texels * 4;
+	int size_tex_data = sizeof(GLubyte) * num_values;
 
-    // Generate a buffer ID called a PBO (Pixel Buffer Object)
-    glGenBuffers(1, &pbo);
+	// Generate a buffer ID called a PBO (Pixel Buffer Object)
+	glGenBuffers(1, &pbo);
 
-    // Make this the current UNPACK buffer (OpenGL is state-based)
-    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo);
+	// Make this the current UNPACK buffer (OpenGL is state-based)
+	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo);
 
-    // Allocate data for the buffer. 4-channel 8-bit image
-    glBufferData(GL_PIXEL_UNPACK_BUFFER, size_tex_data, NULL, GL_DYNAMIC_COPY);
-    cudaGLRegisterBufferObject(pbo);
+	// Allocate data for the buffer. 4-channel 8-bit image
+	glBufferData(GL_PIXEL_UNPACK_BUFFER, size_tex_data, NULL, GL_DYNAMIC_COPY);
+	cudaGLRegisterBufferObject(pbo);
 
 }
 
 void errorCallback(int error, const char* description) {
-    fprintf(stderr, "%s\n", description);
+	fprintf(stderr, "%s\n", description);
 }
 
 bool init() {
-    glfwSetErrorCallback(errorCallback);
+	glfwSetErrorCallback(errorCallback);
 
-    if (!glfwInit()) {
-        exit(EXIT_FAILURE);
-    }
+	if (!glfwInit()) {
+		exit(EXIT_FAILURE);
+	}
 
-    window = glfwCreateWindow(width, height, "CIS 565 Path Tracer", NULL, NULL);
-    if (!window) {
-        glfwTerminate();
-        return false;
-    }
-    glfwMakeContextCurrent(window);
-    glfwSetKeyCallback(window, keyCallback);
-    glfwSetCursorPosCallback(window, mousePositionCallback);
-    glfwSetMouseButtonCallback(window, mouseButtonCallback);
+	window = glfwCreateWindow(width, height, "CIS 565 Path Tracer", NULL, NULL);
+	if (!window) {
+		glfwTerminate();
+		return false;
+	}
+	glfwMakeContextCurrent(window);
+	glfwSetKeyCallback(window, keyCallback);
+	glfwSetCursorPosCallback(window, mousePositionCallback);
+	glfwSetMouseButtonCallback(window, mouseButtonCallback);
 
     // Set up GL context
     glewExperimental = GL_TRUE;
@@ -161,15 +161,15 @@ bool init() {
         return false;
     }
 
-    // Initialize other stuff
-    initVAO();
-    initTextures();
-    initCuda();
-    initPBO();
-    GLuint passthroughProgram = initShader();
+	// Initialize other stuff
+	initVAO();
+	initTextures();
+	initCuda();
+	initPBO();
+	GLuint passthroughProgram = initShader();
 
-    glUseProgram(passthroughProgram);
-    glActiveTexture(GL_TEXTURE0);
+	glUseProgram(passthroughProgram);
+	glActiveTexture(GL_TEXTURE0);
 
     // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
@@ -196,15 +196,15 @@ void drawGui(int windowWidth, int windowHeight) {
     ImGui::NewFrame();
 
     // Dear imgui define
-    ImVec2 minSize(300.f, 220.f);
-    ImVec2 maxSize((float)windowWidth * 0.5, (float)windowHeight * 0.3);
+    ImVec2 minSize(340.f, 260.f);
+    ImVec2 maxSize((float)windowWidth * 0.5, (float)windowHeight);
     ImGui::SetNextWindowSizeConstraints(minSize, maxSize);
 
     ImGui::SetNextWindowPos(ui_hide ? ImVec2(-1000.f, -1000.f) : ImVec2(0.0f, 0.0f));
-
     ImGui::Begin("Control Panel", 0, windowFlags);
     ImGui::SetWindowFontScale(1);
-
+    ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+    ImGui::Dummy(ImVec2(0.0f, 20.0f));
     ImGui::Text("press H to hide GUI completely.");
     if (ImGui::IsKeyPressed('H')) {
         ui_hide = !ui_hide;
@@ -212,16 +212,26 @@ void drawGui(int windowWidth, int windowHeight) {
 
     ImGui::SliderInt("Iterations", &ui_iterations, 1, startupIterations);
 
-    ImGui::Checkbox("Denoise", &ui_denoise);
+    int filterSize = 1 << (ui_denoiseIters + 1);        // technically we can do log2(ui_filterSize) - 1 to figure out denoise iters but this reverse way makes more sense to me
 
-    ImGui::SliderInt("Filter Size", &ui_filterSize, 0, 100);
-    ImGui::SliderFloat("Color Weight", &ui_colorWeight, 0.0f, 10.0f);
-    ImGui::SliderFloat("Normal Weight", &ui_normalWeight, 0.0f, 10.0f);
-    ImGui::SliderFloat("Position Weight", &ui_positionWeight, 0.0f, 10.0f);
+    const int countDenoise = static_cast<int>(DenoiseMode::COUNT);
+    const char* labelsDenoise[countDenoise] = { "Off", "Denoise After Pathtracing", "Denoise After Every Trace"};
+    ImGui::Combo("Denoise Mode", reinterpret_cast<int*>(&ui_denoiseMode), labelsDenoise, countDenoise);
+
+    if (ui_denoiseMode != DenoiseMode::NONE)
+    {
+        ImGui::SliderInt("Denoise Iters", &ui_denoiseIters, 0, 10);
+        ImGui::Text(("Denoise Filter Size: " + std::to_string(filterSize) + "x" + std::to_string(filterSize)).c_str());
+        ImGui::SliderFloat("Color Weight", &ui_colorWeight, 0.0f, 1.0f);
+        ImGui::SliderFloat("Normal Weight", &ui_normalWeight, 0.0f, 1.0f);
+        ImGui::SliderFloat("Position Weight", &ui_positionWeight, 0.0f, 1.0f);
+    }
 
     ImGui::Separator();
 
-    ImGui::Checkbox("Show GBuffer", &ui_showGbuffer);
+    const int countRender = static_cast<int>(RenderMode::COUNT);
+    const char* labels[countRender] = { "Full", "Positions", "Normals", "Depth"};
+    ImGui::Combo("Render Mode", reinterpret_cast<int*>(&ui_renderMode), labels, countRender);
 
     ImGui::Separator();
 

@@ -73,6 +73,7 @@ set(headers
     src/sceneStructs.h
     src/preview.h
     src/utilities.h
+    external/include/tiny_gltf.h
     )
 
 set(sources
