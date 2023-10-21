@@ -67,10 +67,12 @@ Denoising will add more time to the renders. For A-tous, it usually slow down th
 
 Denoising visual effect does depends on filter size, however, the visual quality does not scale uniformly with filter size. For image that itself contains a lot of details, when filter size is large, it will lose the smaller details as the filter size get larger. The visual quality scale with image only if it does not exceed the threshold that it will starts to blur out the details. Here are images with filter size 10,20,40,80. Note the details of teapot lower bottom with light reflection starts to fade out when filter size is large.
 
-<img src="./img/teapot_10_d.png" style="display:inline;" width=200px>
-<img src="./img/teapot_20_d.png" style="display:inline;" width=200px>
-<img src="./img/teapot_40_d.png" style="display:inline;" width=200px>
-<img src="./img/teapot_80_d.png" style="display:inline;" width=200px>
+<div>
+    <img src="./img/teapot_10_d.png" style="display:inline;" width=200px>
+    <img src="./img/teapot_20_d.png" style="display:inline;" width=200px>
+    <img src="./img/teapot_40_d.png" style="display:inline;" width=200px>
+    <img src="./img/teapot_80_d.png" style="display:inline;" width=200px>
+</div>
 
 Denoising filter gives good result when there is huge change in color contrast or object contrast, however, for objects that is smooth and simple color shaded, it will genuinely lose details for small shading in the geometry. For materials such as metallic or glass, it genuinely gives better result. For materials such as diffuse, sometimes, it will lose the details. Same scene as last section but change the material, the glass gives good approximation at around 500spp, whereas the lambert one gives good appromixation around 1000spp. 
 
