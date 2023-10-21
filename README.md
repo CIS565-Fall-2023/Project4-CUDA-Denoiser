@@ -8,7 +8,6 @@ Han Wang
 Tested on: Windows 11, 11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz 22GB, GTX 3070 Laptop GPU
 
 
-|without Denoize|with Denoize|
 |:-----:|:-----:|
 |<img src="https://github.com/Ibm510000/Project4-CUDA-Denoiser/blob/base-code/img/cornell.2023-10-19_01-52-06z.181samp.png" width="300" height="300">|<img src="https://github.com/Ibm510000/Project4-CUDA-Denoiser/blob/base-code/img/cornell.2023-10-20_23-54-52z.277samp.png" width="300" height="300">
 ### Analysis
@@ -19,6 +18,9 @@ Firstly, Among the tested output, since the denoize time will be affected by the
 Based on my observation, with the denoize feature implemented, the iteration amount needed for reaching the acceptable smooth condition was significantly reduced, leading to more efficient and time-saving results in the process.
 
 Also, based on my test I got the following graph amount of the resolution and runtime of denoize:
+
+|:-----:|
+|<img src="https://github.com/Ibm510000/Project4-CUDA-Denoiser/blob/base-code/img/denoize_resolution.png width="600" height="600">|
 
 <img src="https://github.com/Ibm510000/Project4-CUDA-Denoiser/blob/base-code/img/denoize_resolution.png width="600" height="600">
 
