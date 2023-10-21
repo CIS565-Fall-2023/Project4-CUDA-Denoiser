@@ -24,6 +24,8 @@ int startupIterations = 0;
 int lastLoopIterations = 0;
 bool ui_showGbuffer = false;
 bool ui_denoise = false;
+bool ui_gdenoise = false;
+float ui_sigma=1.0f;
 int ui_filterSize = 80;
 float ui_colorWeight = 0.45f;
 float ui_normalWeight = 0.35f;
@@ -106,7 +108,12 @@ void saveImage() {
         for (int y = 0; y < height; y++) {
             int index = x + (y * width);
             glm::vec3 pix = renderState->image[index];
-            img.setPixel(width - 1 - x, y, glm::vec3(pix) / samples);
+            if(ui_denoise){
+              img.setPixel(width - 1 - x, y, glm::vec3(pix));
+            }else{
+              img.setPixel(width - 1 - x, y, glm::vec3(pix) / samples);
+            }
+            
         }
     }
 
@@ -164,13 +171,17 @@ void runCuda() {
         int frame = 0;
         pathtrace(frame, iteration);
     }
-
     if (ui_showGbuffer) {
       showGBuffer(pbo_dptr);
-    } else {
+    }else if(ui_denoise) {
+      if(ui_gdenoise){
+        showGDenoisImage(pbo_dptr,ui_filterSize,ui_sigma,ui_colorWeight,ui_normalWeight,ui_positionWeight,iteration);
+      }
+      showDenoisImage(pbo_dptr,ui_filterSize,ui_colorWeight,ui_normalWeight,ui_positionWeight,iteration);
+    }else {
       showImage(pbo_dptr, iteration);
     }
-
+    //showDenoisImage(pbo_dptr,9,ui_colorWeight,ui_normalWeight,ui_positionWeight,iteration,levels);
     // unmap buffer object
     cudaGLUnmapBufferObject(pbo);
 
