@@ -120,10 +120,7 @@ Diffuse | Specular | Imperfect Specular
 ### **How do results compare across different scenes**
 **For example, between `cornell.txt` and `cornell_ceiling_light.txt`. Does one scene produce better denoised results? Why or why not?**
 
-The results across different scenes vary greatly. For example, the denoiser works exceptionally on the `cornell_ceiling_light` scene, but not so much on the regular `cornell` scene.    
-From my testing, denoiser seems to work better on bright scenes. As I dig deeper, I realize that it's not actually the brightness, but the color variations. In a bright scene, most pixels are lit up uniformly and the LTE computation converges more quickly. On the other hand, when the scene is dark, the bright pixels are more sparse and there are inherently more noises in the scene, which makes denoising a harder task.     
-Since we are using normals/positions/time to intersect to avoid the edges, when the different edges actually have different normal/position/time, our algorithm will expectedly work better.    
-It is worth mentioning that different scenes also require different norm/pos/t configurations to look the best.   
+The efficacy of denoising is scene-dependent. In the cornell_ceiling_light setup, it shows promising results, whereas in the standard cornell scene, it's less effective. Uniformly lit scenes with limited color variations favor denoisers, as consistent illumination aids in rapid light emission computations. In contrast, darker scenes with infrequent bright spots introduce more noise, posing challenges to the denoising process.  
 
 Cornell Scene | Light Cornell Scene 
 :----------:|:-----------:
@@ -132,8 +129,7 @@ Cornell Scene | Light Cornell Scene
 
 ### **A-Trous Filtering vs. Gaussian Filtering**
 
-For performance comparison, as expected, A-Trous Filtering outperforms Gaussian Filtering significantly. Specifically, the performance of A-Trous and Gaussian are comparable with a filter size of 10 (resolution 800x800), but the runtime of A-Trous increases almost linearly whereas the runtime of Gaussian increases exponentially. They are also comparable at very small resolution, but again the runtime of Gaussian increases exponentially with the resolution whereas A-Trous only increases linearly.    
-This makes perfect sense since A-Trous algorithm always takes 5x5 samples for each pixel, and only increase the number of iterations when the filter size increases. However, Gaussian blur takes nxn samples, which is a exponential increase.     
+In performance comparisons, A-Trous Filtering notably surpasses Gaussian Filtering. A-Trous runtime grows almost linearly with increasing filter size or resolution, whereas Gaussian's runtime rises exponentially. 
 
 <p align="center">
   <img width="800" height="500" src="img/chart4.png" alt="Chart">

@@ -16,7 +16,7 @@
 
 #define ERRORCHECK 1
 
-#define GAUSS_ON_ATROUS_OFF 0
+#define GAUSS_ON_ATROUS_OFF 1
 #define AVOID_EDGE 1
 #define SHOW_POS_BUFFER 0
 #define SHOW_NOR_BUFFER 0
