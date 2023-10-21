@@ -1,7 +1,7 @@
-CUDA Path Tracer
+CUDA Denoiser For CUDA Path Tracer
 ================
 
-**University of Pennsylvania, CIS 565: GPU Programming and Architecture, Project 3**
+**University of Pennsylvania, CIS 565: GPU Programming and Architecture, Project 4**
 
 * Zhiyu Lei
   * [LinkedIn](https://www.linkedin.com/in/zhiyu-lei/), [Github](https://github.com/Zhiyu-Lei)
@@ -12,39 +12,37 @@ CUDA Path Tracer
 (This output is generated from the scene in [scenes/customize.txt](scenes/customize.txt))
 
 ### Project Features
-#### A shading kernel with BSDF evaluation for diffuse and specular-reflective surfaces
-For a non-reflective (i.e. diffuse) surface like the side wall in the output image, a ray intersected with the surface changes its direction to a cosine-weighted random direction in a hemisphere around the surface normal.
+This project is extended from the [CUDA Path Tracer](https://github.com/Zhiyu-Lei/CIS5650-Project3-CUDA-Path-Tracer) project by implementing the A-trous wavelet filter with and without edge-avoiding technique in order to denoise the path tracer output. The A-trous wavelet filter is introduced in [Dammertz et al.'s paper](https://jo.dreggn.org/home/2010_atrous.pdf). More details are described below:
 
-For a specular-reflective surface like the metal ball in the output image, a ray intersected with the surface has a 50% probability to change its direction according to the specular reflection law, while another 50% probability to change its direction as diffuse reflection.
-
-#### Path continuation/termination using Stream Compaction
-A path terminates when the corresponding ray intersects with a light source or no longer intersects with any objects. Those terminated paths no longer need to be traced any more and can already have their pixels colored. In this case, Stream Compaction can be applied to filter and continue with only unterminated paths for the next bounces.
-
-The plot below shows how many unterminated paths remain after each bounce within one iteration in the reference scene:
-![](img/README/rays-bounce.png)
-
-Also, for a closed scene where no light can escape, Stream Compaction can still improve efficiency. This is because though every ray must intersect with some objects, there can be some rays terminating by intersecting with light sources.
-
-#### Sorting intersections and pathSegments by material types
-In each bounce after the intersections are computed, the intersections and the corresponding pathSegments are reordered so that the same materials are contiguous in memory before shading. However, I did not experience much performance improvement, and the process of sorting by material types could be even more costly than randomly accessing in memory.
-
-#### Refraction with Frensel effects using Snell's law
-For a refractive material like the glass ball or the purple crystal cube in the output image, a ray intersected with the material has a 99% probability to pass through the material following Snell's law, while another 1% probability to change its direction as diffuse or specular reflection on the surface.
-
-#### Stochastic Sampled Antialiasing
-The following two images show a comparison of outputs after 50 iterations between with and without antialiasing where the rays are somewhat jittered through the pixels. The output without antialiasing is quite noisier than the one with, particularly on the glass ball.
-|With antialiasing|Without antialiasing|
+#### G-Buffers for normals and positions
+Since the edge-avoiding technique requires the normal and position of each pixel to detect edges and compute weights of neighboring pixels for filtering, normals and positions are stored as G-Buffers and can be visualized as following:
+|Per-pixel normals|Per-pixel positions|
 |:---:|:---:|
-|![](img/README/ref.50samp.png)|![](img/README/no-antialiasing.50samp.png)|
+|![](img/README/normal.png)|![](img/README/position.png)|
 
-#### Direct lighting by taking a final ray directly to a random point on an emissive object acting as a light source
-The following two images show a comparison of outputs after 50 iterations between with and without direct lighting where the final rays intersect with objects acting as light sources. The output without direct lighting is darker than the one with, and even comtains some incorrect black pixels.
-|With direct lighting|Without direct lighting|
+#### A-trous kernel and its iterations without weighting, i.e. Gaussian blur
+The following two images show a comparison of outputs after 3 iterations between the raw output and the one applied with a 5x5 Gaussian filter. The Gaussian filter has some denoising effect, but it also blurs the output and smooths the sharp edges.
+|Raw output|Gaussian filter|
 |:---:|:---:|
-|![](img/README/ref.50samp.png)|![](img/README/no-direct-lighting.50samp.png)|
+|![](img/README/cornell.original.3samp.png)|![](img/README/cornell.gaussian.3samp.png)|
 
-#### Jittered sampling for Monte Carlo ray tracing
-The following two images show a comparison of outputs after 50 iterations between jittered sampling (on a grid with the same resolution as the output) and normal random sampling. The output with normal random sampling is a little bit noisier than the one with jittered sampling.
-|Jittered sampling|Random sampling|
+#### A-trous kernel and its iterations with weighting
+The following two images show a comparison of outputs after 3 iterations between the raw output and the one applied with a 5x5 weighted A-trous kernel. G-Buffers with per-pixel normals and positions are used to perceive edges and weigh neighboring pixels less if they are from different surfaces. This kernel has better denoising effect than the previous Gaussian filter, and it preserves the edges better.
+|Raw output|A-trous with weighting|
 |:---:|:---:|
-|![](img/README/ref.50samp.png)|![](img/README/random-sampling.50samp.png)|
+|![](img/README/cornell.original.3samp.png)|![](img/README/cornell.denoise.3samp.png)|
+
+### Performance Analysis
+#### How much time denoising adds to your renders
+
+#### How denoising influences the number of iterations needed to get an "acceptably smooth" result
+
+#### How denoising at different resolutions impacts runtime
+
+#### How varying filter sizes affect performance
+
+#### How vidual results vary with filter size
+
+#### How effective/ineffective is this method with different material types
+
+#### How do results compare across different scenes

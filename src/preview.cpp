@@ -234,6 +234,11 @@ void drawGui(int windowWidth, int windowHeight) {
 		ui_saveAndExit = true;
 	}
 	
+	ImGui::Separator();
+
+	ImGui::Text("Traced Depth %d", imguiData->TracedDepth);
+	ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+
 	ImGui::End();
 	
 	ImGui::Render();
