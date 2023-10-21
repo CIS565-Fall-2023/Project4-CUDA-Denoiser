@@ -70,6 +70,14 @@ This comparison was done using a filter size of 65x65 (5 denoiser iterations) on
 
 Since the denoising happens only once at the end of the path-tracing, it does not have a significant cost if used. Since at least 5 samples are required to get a good result anyway, we can use the denoiser without much worry about its performance cost, as that is definitely not the bottleneck.
 
+What is interesting, however, is that the samples per pixel required to produce an "acceptable" result can be significantly lowered by using this denoiser.
+
+|<img src="img/PT5000Iters.png" width="400">|<img src="img/denoisedImg.png" width="400">|
+|:-:|:-:|
+|Path-traced (5000 samples per pixel)<br>Render time: ~1 minute|Path-traced (100 samples per pixel) + Denoised<br>Render time: 1.03 seconds|
+
+The above denoised image does not look significantly different from the path-traced image, but does cut the render cost by almost 60x!
+
 ### Denoise time at different resolutions
 
 This comparison was done using a filter size of 65x65 (5 denoiser iterations) on the cornell box scene with a specular sphere, with increasing image resolution.
@@ -80,16 +88,52 @@ The time to denoise images with exponentially growing scales also scales exponen
 
 ### Denoise time with varying filter sizes
 
-This comparison was done using varying filter sizes on the cornell box scene with a specular sphere, with a constant image resolution of 800x800 pixels.
+This comparison was done using varying filter sizes on the cornell box scene with a specular sphere, with a constant image resolution of 800x800 pixels and 100 samples per pixel.
+
+|<img src="img/denoiseIter1.png" width="300">|<img src="img/denoiseIter2.png" width="300">|<img src="img/denoiseIter3.png" width="300">|
+|:-:|:-:|:-:|
+|5x5 fitler (1 denoise iteration)|9x9 filter (2 denoiser iterations)|17x17 filter (3 denoiser iterations)|
+|<img src="img/denoiseIter4.png" width="300">|<img src="img/denoiseIter5.png" width="300">|<img src="img/denoiseIter6.png" width="300">|
+|33x33 fitler (4 denoise iteration)|65x65 filter (5 denoiser iterations)|129x129 filter (6 denoiser iterations)|
+
+About 5 denoiser iterations are enough to get an acceptable result. The "gain" in visual quality does not seem to scale linearly with increasing filter size, as the gains seem to become lesser and lesser. The difference between the denoised results from 5 and 6 denoiser iterations are not significant enough to justify using more denoiser iterations.
 
 <img src="img/filterSizeDenoiseTime.png">
 
 The time taken to denoise with exponentially increasing filter sizes scales linearly only, since exponentially increasing filter sizes only scale the denoiser iterations linearly (by 1 with each power of 2 filter size). This means that the filter size is not too much of a concern and will not be the primary bottleneck in path-tracing.
 
+### Denoiser vs material types
 
-how denoising influences the number of iterations needed to get an "acceptably smooth" result
+<ins>**Lambertian Diffuse**</ins>
 
-how visual results vary with filter size -- does the visual quality scale uniformly with filter size?
+|<img src="img/diffuse5000.png" width="400">|<img src="img/diffuseDenoised.png" width="400">|<img src="img/diff2.png" width="400">|
+|:-:|:-:|:-:|
+|Path-traced (5000 samples per pixel)<br>Render time: ~1 minute|Path-traced (100 samples per pixel) + Denoised<br>Render time: <1 second|Diff|
+
+In the diffuse case, the denoiser works best. The denoised results look acceptable, though the only problematic areas are around the edges of the light source. This is an unfortunate side effect of the way this denoiser works.
+
+<ins>**Perfect Specular**</ins>
+
+|<img src="img/PT5000Iters.png" width="400">|<img src="img/denoisedImg.png" width="400">|<img src="img/diff1.png" width="400">|
+|:-:|:-:|:-:|
+|Path-traced (5000 samples per pixel)<br>Render time: ~1 minute|Path-traced (100 samples per pixel) + Denoised<br>Render time: 1.03 seconds|Diff|
+
+While the result does not look that bad on the specular sphere, it is smoothed out a bit too much, as the normals on the sphere are changing constantly and its difficult to find any edge here for the edge stopping.
+
+<ins>**Refractive Materials**</ins>
+
+|<img src="img/glass.png" width="400">|<img src="img/glassDenoised.png" width="400">|<img src="img/diff3.png" width="400">|
+|:-:|:-:|:-:|
+|Path-traced (10000 samples per pixel)<br>Render time: ~3.2 minutes|Path-traced (100 samples per pixel) + Denoised<br>Render time: 5 seconds|Diff|
+
+This is where this algorithm starts to fail. Most of the detail that is refracted through glass is blurred out too significantly to be able to be interpreted as refraction. In this example image, even the specular highlights on the icosphere behind the glass monkey are blurred out in the denoiser to the point where it looks like a simple diffuse icosphere.
+
+### Denoiser vs differently sized light sources
+
+|<img src="img/denoiseIter5.png" width="400">|<img src="img/denoiseBig.png" width="400">|
+|:-:|:-:|
+|Path-traced (100 samples per pixel) + Denoised<br>Render time: 1.03 seconds|Path-traced (100 samples per pixel) + Denoised<br>Render time: 0.82 seconds|
+
 how effective/ineffective is this method with different material types
 how do results compare across different scenes - for example, between cornell.txt and cornell_ceiling_light.txt. Does one scene produce better denoised results? Why or why not?
 
