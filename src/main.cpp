@@ -7,6 +7,7 @@
 #include "../imgui/imgui_impl_opengl3.h"
 
 static std::string startTimeString;
+static std::string resultsFolderPath = "../img/results/";
 
 // For camera controls
 static bool leftMousePressed = false;
@@ -23,12 +24,16 @@ int ui_iterations = 0;
 int startupIterations = 0;
 int lastLoopIterations = 0;
 bool ui_showGbuffer = false;
+int ui_currGBuffer = 0;
 bool ui_denoise = false;
+bool ui_atrous = true;
 int ui_filterSize = 80;
-float ui_colorWeight = 0.45f;
+float ui_colorWeight = 150.f;
 float ui_normalWeight = 0.35f;
-float ui_positionWeight = 0.2f;
+float ui_positionWeight = 0.35f;
 bool ui_saveAndExit = false;
+int denoiserCallCount = 0;
+int ptCallCount = 0;
 
 static bool camchanged = true;
 static float dtheta = 0, dphi = 0;
@@ -69,8 +74,8 @@ int main(int argc, char** argv) {
     width = cam.resolution.x;
     height = cam.resolution.y;
 
-    ui_iterations = renderState->iterations;
-    startupIterations = ui_iterations;
+    ui_iterations = 50; // renderState->iterations;
+    startupIterations = renderState->iterations;
 
     glm::vec3 view = cam.view;
     glm::vec3 up = cam.up;
@@ -111,8 +116,12 @@ void saveImage() {
     }
 
     std::string filename = renderState->imageName;
+    if (ui_denoise) {
+        filename += "_denoised";
+    }
+
     std::ostringstream ss;
-    ss << filename << "." << startTimeString << "." << samples << "samp";
+    ss << resultsFolderPath << filename << "." << startTimeString << "." << samples << "samp";
     filename = ss.str();
 
     // CHECKITOUT
@@ -128,6 +137,10 @@ void runCuda() {
 
     if (camchanged) {
         iteration = 0;
+        // for performance analysis
+        denoiserCallCount = 0;
+        ptCallCount = 0;
+
         Camera &cam = renderState->camera;
         cameraPosition.x = zoom * sin(phi) * sin(theta);
         cameraPosition.y = zoom * cos(theta);
@@ -157,18 +170,37 @@ void runCuda() {
     uchar4 *pbo_dptr = NULL;
     cudaGLMapBufferObject((void**)&pbo_dptr, pbo);
 
+    PerformanceTimer timer;
+    timer.startCpuTimer();
+
     if (iteration < ui_iterations) {
         iteration++;
-
         // execute the kernel
         int frame = 0;
         pathtrace(frame, iteration);
     }
 
     if (ui_showGbuffer) {
-      showGBuffer(pbo_dptr);
-    } else {
-      showImage(pbo_dptr, iteration);
+      showGBuffer(pbo_dptr, ui_currGBuffer);
+    } 
+    else if (ui_denoise) {
+        denoise(pbo_dptr, iteration, ui_colorWeight, ui_normalWeight, ui_positionWeight, ui_filterSize, ui_atrous, denoiserCallCount);
+        denoiserCallCount++;
+    }
+    else {
+        showImage(pbo_dptr, iteration);
+        ptCallCount++;
+    }
+    timer.endCpuTimer();
+
+    // for performance analysis
+    if (iteration == ui_iterations) {
+        if (ui_denoise && denoiserCallCount < TIMER_COUNT) {
+            std::cout << "Path tracer with denoiser execution: " << timer.getCpuElapsedTimeForPreviousOperation() << "ms." << std::endl;
+        }
+        else if (ptCallCount < TIMER_COUNT) {
+            std::cout << "Path tracer execution: " << timer.getCpuElapsedTimeForPreviousOperation() << "ms." << std::endl;
+        }
     }
 
     // unmap buffer object

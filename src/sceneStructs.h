@@ -62,6 +62,7 @@ struct RenderState {
 struct PathSegment {
 	Ray ray;
 	glm::vec3 color;
+    glm::vec3 throughput;
 	int pixelIndex;
 	int remainingBounces;
 };
@@ -72,11 +73,14 @@ struct PathSegment {
 struct ShadeableIntersection {
   float t;
   glm::vec3 surfaceNormal;
+  glm::vec3 position;
   int materialId;
 };
 
 // CHECKITOUT - a simple struct for storing scene geometry information per-pixel.
 // What information might be helpful for guiding a denoising filter?
 struct GBufferPixel {
-  float t;
+  //float t;
+  glm::vec3 normal;
+  glm::vec3 position;
 };
