@@ -221,7 +221,9 @@ void drawGui(int windowWidth, int windowHeight) {
 
     ImGui::Separator();
 
-    ImGui::Checkbox("Show GBuffer", &ui_showGbuffer);
+    ImGui::Checkbox("Show GBuffer (Normal)", &ui_showGbuffer);
+    ImGui::SameLine();
+    ImGui::Checkbox("Show Position", &ui_showPosition);
 
     ImGui::Separator();
 
