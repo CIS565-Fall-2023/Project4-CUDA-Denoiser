@@ -76,17 +76,23 @@ Denoising visual effect does depends on filter size, however, the visual quality
 
 Denoising filter gives good result when there is huge change in color contrast or object contrast, however, for objects that is smooth and simple color shaded, it will genuinely lose details for small shading in the geometry. For materials such as metallic or glass, it genuinely gives better result. For materials such as diffuse, sometimes, it will lose the details. Same scene as last section but change the material, the glass gives good approximation at around 500spp, whereas the lambert one gives good appromixation around 1000spp. 
 
-<img src="./img/teapot3_n_500.png" style="display:inline;" width=200px>
-<img src="./img/teapot3_d_500.png" style="display:inline;" width=200px>
+<div>
+    <img src="./img/teapot3_n_500.png" style="display:inline;" width=200px>
+    <img src="./img/teapot3_d_500.png" style="display:inline;" width=200px>
+</div>
 
 For scene between cornell.txt and cornell_ceiling_light.txt, denoising filter gives better approximation for cornell_ceiling_light. In the ceiiling_light scene, there is larger ligt object, that allows the scene to be less noisy (larger possibility to hit the light source). Here are images at 21 spp for two scenes with same filter size.
 
 Cornell: 
 
+<div>
 <img src="./img/C_21_n.png" style="display:inline;" width=300px>
 <img src="./img/C_21_d.png" style="display:inline;" width=300px>
+</div>
 
 Cornell_ceiling_light:
 
+<div>
 <img src="./img/CL_21_n.png" style="display:inline;" width=300px>
 <img src="./img/CL_21_d.png" style="display:inline;" width=300px>
+</div>
