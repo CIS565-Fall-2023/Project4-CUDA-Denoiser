@@ -24,10 +24,10 @@ int startupIterations = 0;
 int lastLoopIterations = 0;
 bool ui_showGbuffer = false;
 bool ui_denoise = false;
-int ui_filterSize = 80;
-float ui_colorWeight = 0.45f;
-float ui_normalWeight = 0.35f;
-float ui_positionWeight = 0.2f;
+int ui_filterSize = 129;
+float ui_colorWeight = 5.00f;
+float ui_normalWeight = 0.203f;
+float ui_positionWeight = 0.630f;
 bool ui_saveAndExit = false;
 
 static bool camchanged = true;
@@ -167,7 +167,13 @@ void runCuda() {
 
     if (ui_showGbuffer) {
       showGBuffer(pbo_dptr);
-    } else {
+    }
+    else if (ui_denoise) {
+        denoise(ui_filterSize, ui_colorWeight, ui_normalWeight, ui_positionWeight);
+        // show image after denoise
+        showImageAfterDenoising(pbo_dptr, iteration);
+    }
+    else {
       showImage(pbo_dptr, iteration);
     }
 
