@@ -1,197 +1,113 @@
-CUDA Path Tracer
+Edge-avoiding A-Trous Wavelet Transform Desnoier
 ================
-A GPU Path Tracer implemented on CUDA C++.
+In this project, I implemented a denoiser for my path tracer based on this [paper](https://jo.dreggn.org/home/2010_atrous.pdf).
 
-**University of Pennsylvania, CIS 565: GPU Programming and Architecture, Project 3**
+**University of Pennsylvania, CIS 565: GPU Programming and Architecture, Project 4**
 
 * Mengxuan Huang
   * [LinkedIn](https://www.linkedin.com/in/mengxuan-huang-52881624a/)
 * Tested on: Windows 11, i9-13980HX @ 2.22GHz 64.0 GB, RTX4090-Laptop 16384MB
+-----------------------------
 ## Outcome
-Astartes of Warhammer 40,000
-![](/img/astartes.png)
+CornellBox scene with 100 sample per pixel
+|Without denoiser| Gaussian Filtering| Edge-avoiding A-Trous Wavelet Transform denosier|
+|:--------:|:--------:|:--------:|
+|![](/img/undenoised_100.png)|![](/img/gaussian_100.png)|![](/img/denoised_100.png)|
 
-- **Thanks [Constantine Nikolaenko](https://www.cgtrader.com/badmaker91) from [cgtrader](https://www.cgtrader.com/) and [Games Workshop](https://www.games-workshop.com/en-US/Warhammer-40-000?_requestid=20431942) for this fantastic [Astartes of Steppe Hawks chapter Free 3D model](https://www.cgtrader.com/free-3d-models/character/sci-fi-character/astartes-of-steppe-hawks-chapter)!!**
-- **Thanks for this [Rathaus Environment Map](https://polyhaven.com/a/rathaus) HDR environment map.**
+## G-Buffer Visualization
+|Normal| Position|
+|:--------:|:--------:|
+|![](/img/normal.png)|![](/img/position.png)|
 
-## Features
-- [Camera Controll & GUI](#camera-control--gui)
-- [Customized JSON scene file](#json-scene-file)
-- [Stochastic Sampled Anti-aliasing](#stochastic-sampled-anti-aliasing)
-- [Bounding Volume Hierarchy](#bounding-volume-hierarchy)
-- [Tone mapping](#tone-mapping)
-- [Mesh Loader(obj) and texture mapping](#mesh-loaderobj-and-texture-mapping)
-- [BSDFs](#bsdfs)
-  - Diffuse Reflection
-  - Specular Reflection
-  - Specular Refraction
-  - Microfacet Reflection
-  - Subsurface Scattering
-- [Physically-based depth-of-field](#physically-based-depth-of-field)
-### Camera Control & GUI
------------------------------
-#### Camera
-- `ctrl + LMB` : Rotate camera around reference point
-- `shift + LMB` : Pan camera and reference point 
-- `mouse scroll whell`: camera zomm in/out
-#### GUI
-|Description|ImGui|
-|-------|------|
-|Display fram time, frame rate per second, and same image button|![](/img/gui_1.png)|
-|Display and adjust camera configuration|![](/img/gui_2.png)|
-|Display and adjust parameters of the default material|![](/img/gui_3.png)|
-
-### JSON scene file
------------------------------
-To accelerate develop, testing, and scene set-up, I defined json-basde scene files as well as implemented a json reader based on [Json File Reader](https://github.com/nlohmann/json).
-Here is a simple example of a scene with a camera, a Cube and a Light.
-```
-{
-  "resources path": "resources/",
-  "camera": {
-    "ref": [ 0, 2.5, 0 ],
-    "position": [ 0, 5.5, -30 ],
-    "fovy": 19.5,
-    "resolution": [ 680, 680 ],
-    "interation": 1000,
-    "depth": 8
-  },
-  "materials": [
-    {
-      "name": "WhiteLight",
-      "albedo": [ 1, 1, 1 ],
-      "emittance": 40.0
-    },
-    {
-      "name": "MatteWhite",
-      "type": "DiffuseReflection",
-      "albedo": [ 0.85, 0.81, 0.78 ]
-    }
-  ],
-  "geomerties": [
-    {
-      "type": "obj",
-      "path": "meshes/plane.obj",
-      "name": "light",
-      "material": "WhiteLight",
-      "translation": [ 0, 7.45, 0 ],
-      "rotation": [ 0, 0, 0 ],
-      "scale": [ 1.5, 1, 1.5 ]
-    },
-    {
-      "type": "obj",
-      "path": "meshes/cube.obj",
-      "name": "Cube",
-      "material": "MatteWhite",
-      "translation": [ -2, -1, 0.75 ],
-      "rotation": [ 0, -17.5, 0 ],
-      "scale": [ 1.5, 1.5, 1.5 ]
-    }
-  ]
-}
-```
-This is an example of [CornellBox scene](/resources/scenes/cornellBox.json). You can find more samples in [Resources](/resources/scenes/)
+## Performance Analysis
+### A-Trous Denoiser Frame Time
+Test on the CornellBox scene
 <p align = "center">
- <img src = "/img/cornellBox.png"/>
+  <img src = "./img/frame_time.png"/>
+</p>
+As shown in the line chart, there will be an increase on the frame time after appling denoiser. Besides, when the resolution increase, the denoised time also increases. And more filter iteration requires more time to complete.
+
+### A-Trous Denoised Result Comparision
+Test configuration
+|Resolution|Filter Iterations|Color Weight|Normal Weight|Position Weight|
+|:--------:|:--------:|:--------:|:--------:|:--------:|
+|680 x 680| 5|0.7|0.35|0.2|
+
+|Number of Iterations|1|100|200|300|
+|--------|:--------:|:--------:|:--------:|:--------:|
+|Origin Image|![](/img/comparision/o1.png)  |![](/img/comparision/o100.png)|![](/img/comparision/o200.png)|![](/img/comparision/o300.png)|
+|Denoised Image|![](/img/comparision/d1.png)|![](/img/comparision/d100.png)|![](/img/comparision/d200.png)|![](/img/comparision/d300.png)|
+
+<p align = "center">
+  <img src = "./img/comparision/reference.png"/>
 </p>
 
-**Defualt material will be applied to a geomertiy if not explicit indicate its material in both scene file and obj file**
+*Reference image without denoiser after **3000** iterations*
 
-### Stochastic Sampled Anti-aliasing
------------------------------------
-|Without Anti-aliasing|With Anti-aliasing|
-|:---------:|:---------:|
-|![](img/cornellBox_without_AA_detial.png)|![](img/cornellBox_with_AA_detial.png)|
-|![](img/cornellBox_without_AA.png)|![](img/cornellBox_with_AA.png)|
+According to my experiment, the rendered result is acceptably smooth after **200** iterations, while there still some obvious noise in the reference image after **3000** iterations.
 
-### Bounding Volume Hierarchy
-----------------------------------
-If we want to make the scene interesting, polygons with more triangles are required, which means more ray-scene intersection testing time! To optimize this, I implemented Bounding Volume Herearchy (BVH) in the project to accelerate the intersection testing process.
-
-I test the BVH with a [Astartes of Steppe Hawks chapter Free 3D model](https://www.cgtrader.com/free-3d-models/character/sci-fi-character/astartes-of-steppe-hawks-chapter) *338869 triangles*
-
-*2560x1369 resolution with only 1 ray-intersection test per pixel per frame*
-![](/img/astartes_normal.png)
-||without BVH| Middle Split BVH| SAH BVH|
-|------|------|------|------|
-|fps|0.1|130.27|134.7|
-
-### Tone mapping
------------------------------
-|Without tone mapping|With tone mapping|
-|---------|---------|
-|![](img/cornellBox_without_tm.png)|![](img/cornellBox_with_AA.png)|
-
-In this project, I simply used $x = \frac{x}{1 + x}$. However, there are more interesting tone mapping  to be tried.
-
-### Mesh Loader(obj) and texture mapping
------------------------------
-Now, it is time to make the scene vivid! I implemented a mesh loader based on [TinyObjLoader](https://github.com/tinyobjloader/tinyobjloader) to load obj files with materials(albedo map, normal map, roughness map, and metallic map). 
-|Without normal mapping|With normal mapping|
-|---------|---------|
-|![](img/without_normal.png)|![](img/with_normal.png)|
-
-Here are two image render with diffuse reflection material
-|mario|astartes|
-|---------|---------|
-|![](img/mario_diffuse.png)|![](img/astartes_diffuse.png)|
-
-### BSDFs
------------------------------
-To make the scene more fancy, I implement multiple BSDFS
+### A-Trous Denoiser Quality on Different Configurations
 <p align = "center">
- <img src = "/img/demo_1.png"/>
+  <img src = "./img/comparision/reference.png"/>
 </p>
 
-|Diffuse Reflection|Specular Reflection|Specular Refraction|Microfacet Reflection|Microfacet Reflection(with metallic parameter)|
-|------|-------|-------|------|------|
-|![](/img/diffuse_ball.png)|![](/img/specular_reflect_ball.png)|![](/img/specular_refract_ball.png)|![](/img/microfacet_reflect_ball.png)|![](/img/microfacet_mix_ball.png)|
+*Reference image with*
+|Resolution|Path Tracer Iteration| Filter Iterations|Color Weight|Normal Weight|Position Weight|
+|:--------:|:--------:|:--------:|:--------:|:--------:|:--------:|
+|680 x 680| 100|3|0.45|0.35|0.2|
 
-#### Subsurface Scattering
-<p align = "center">
- <img src = "/img/subsurface_cow.png"/>
-</p>
-I implemented a simple subsurface scattering by allowing rays to scatter randomly within the object, which requires large path depth(usually larger than 16) to obtain a relatively clear image.
+### Filter iteration
+|Reference Image|Filter iteration = 5|
+|:--------:|:--------:|
+|![](/img/config_comparision/f3.png)|![](/img/config_comparision/f5.png)|
 
-#### BSDF with texture mapping
-After applying texture mapping, we can have an impressive rendered Astartes! 
-![](/img/astertes.png)
+As shown in the images, more filter iteration(which also means larger filter size), will improve the quality of the denoised image. But it will also slightly blur the sharp edge of the geomerties.
 
-### Physically-based depth-of-field
-Finally, I implemented Physically-based depth-of-field to make photo-realistic image.
-|CornellBox | Material Ball| Environment only|
-|------|-------|------|
-|![](/img/cornell_dof.png)|![](/img/ball_dof.png)|![](/img/env_dof.png)|
+### Weights
+|Reference Image|Color Weight = 1|Normal Weight = 1|Position Weight = 1|
+|:--------:|:--------:|:--------:|:--------:|
+|![](/img/config_comparision/f3.png)|![](/img/config_comparision/cw1.png)|![](/img/config_comparision/nw1.png)|![](/img/config_comparision/pw1.png)|
 
-### Performance Analysis
------------------------------
-#### Compact terminated pathes
-![](img/performance_chart_1.png)
-- *[Astartes of Steppe Hawks chapter Free 3D model](https://www.cgtrader.com/free-3d-models/character/sci-fi-character/astartes-of-steppe-hawks-chapter) *338869 triangles*
-- *1 ray-intersection test per pixel per frame*
-- *Trace depth is 8*
+As shown in the images, large color weight can make the denoised image more smooth, but make it more blur at the same time. Larger normal and position weights can keep the sharp edges better but weaken the denoised quality.
 
-As shown in this chart, compact terminated pathes are not always an optimization. When pixel count is small. This might because when the number of path is small, GPU computation resources are not fully utilized, compact path-segments will not accelerate GPU computation but introduce extra time for compacting.
+### A-Trous Denoiser Quality on Different BSDFs
+*Test on a cornellBox scene with a Mario under Configuration*
+|Resolution|Path Tracer Iteration| Filter Iterations|Color Weight|Normal Weight|Position Weight|
+|:--------:|:--------:|:--------:|:--------:|:--------:|:--------:|
+|1000 x 1000| 200|3|0.45|0.35|0.2|
 
-Therefore, I set a threshold of pixel count to dynamic determine whether to compact terminated pathes.
+#### Diffuse Reflection
+|Without Denoise|Denoised|
+|:--------:|:--------:|
+|![](/img/wahoo/diffuse_o.png)|![](/img/wahoo/diffuse_d.png)|
 
-#### Sort by materials
-I tried this method, but it increased the frame time significantly, up to 150 ms/frame, even for a simple scene. I suppose the sorting is costly and morden GPU can group threads that executing same instructions without we explicitly do that.
+#### Specular Reflection
+|Without Denoise|Denoised|
+|:--------:|:--------:|
+|![](/img/wahoo/sr_o.png)|![](/img/wahoo/sr_d.png)|
 
-#### First intersection cache
-This is a common technique used in real-time ray tracing, which is based on the G-Buffer computed by rasterization. However, this is not a feasible optimization on path tracer since we need to stochastic sample each pixel to perform anti-aliasing and we have physically-based depth of field camera, which means the intersection point of each frame (or interation) are not fixed.
+#### Glass
+|Without Denoise|Denoised|
+|:--------:|:--------:|
+|![](/img/wahoo/glass_o.png)|![](/img/wahoo/glass_d.png)|
 
-#### Try used shared memory as stack when traverse BVH
-Considering the use of large number of registers in thread will limit the occupancy. I tried to used shared memeory performanced as `stack` when traverse the BVH. This won't have bank conflict when each thread within a warp use a `bank` as a `stack`. However, this method increased the frame time and the traverse slower.
+Accoding to the comparision, A-Trous works better on diffuse reflection than the specular reflection and the glass, as the denoiser will blur the specular BSDFs.
 
-I guess this might because large shared memory also limits the occupany, which is the even worse than using registers.
+#### Texture Mapping (Diffuse Reflection)
+|Without Denoise|Denoised|Denoised(Extract first albedo)|
+|:--------:|:--------:|:--------:|
+|<img src = "./img/wahoo/tex_o.png" width="250">|<img src = "./img/wahoo/tex_d.png" width="250">|<img src = "./img/wahoo/tex_extract_albedo_d.png" width="250">|
 
-### Third Party Credit
------------------------------
-#### Third party Resources
-- [Astartes of Steppe Hawks chapter Free 3D model](https://www.cgtrader.com/free-3d-models/character/sci-fi-character/astartes-of-steppe-hawks-chapter)
-- [Rathaus Environment Map](https://polyhaven.com/a/rathaus)
+I noticed that the denoiser works very bad when geomerty with albedo texture mapping. This might because albedo textures are usually high frequency and will become low frequency after filtering. To avoid this, I record the albedo in the first ray-scene intersection (not multiply it into the throughput) and multiply it back after denoising. As shown in the result, this makes the denoiser perform much better for albedo texture mapping.
 
-#### Third Party Library
-- [Json File Reader](https://github.com/nlohmann/json)
-- [TinyObjLoader](https://github.com/tinyobjloader/tinyobjloader)
+### A-Trous vs Gaussian Filter
+Test configuration
+|Resolution|Filter Iterations|filter size(Gaussian)|Sigma(Gaussian)|
+|:--------:|:--------:|:--------:|:--------:|
+|680 x 680| 200|20|1.0|
+
+|A-Trous|Gaussian|
+|:--------:|:--------:|
+|![](/img/comparision/d200.png)|![](/img/gaussian200.png)|
+
+As shown in the images, A-Trous perform a smoother and more clear result than Gaussian filter. This is because the Gaussian filter simply blur the the pixel with its neighbors without adjusting the weight based on geometry informations like normal and position. Besides, with the increase of filter size, the frame time increase significantly as the time complexity of Gaussian is $O(n^2)$
