@@ -14,12 +14,10 @@ This project is a pathtracing denoiser that uses geometry buffers (G-buffers) to
 |  the scene  | per-pixel normals | per-pixel positions | 
 |---|---|---|
 |![](img/full.png)|![](img/normal.png)|![](img/dist.png)|
+
 * the A-trous kernel and its iterations
 
-<img width="600" alt="1" src="img/4.png">
-
-<img width="600" alt="1" src="img/1.png">
-
+<img width="600" alt="1" src="img/bunny40.png"><img width="600" alt="1" src="img/denoise40.png">
 
 
 ## Performance Analysis
@@ -30,6 +28,13 @@ This project is a pathtracing denoiser that uses geometry buffers (G-buffers) to
 | Denoise time recorded| ![](img/time10.png)|![](img/time40.png)|![](img/time80.png)|
 |Denoise time (average)| 2.83ms|6.62ms|8.56ms|
 
+* how denoising influences the number of iterations needed to get an "acceptably smooth" result
+
+| |  without denoiser | with denoiser| 
+|---|---|---|
+|Acceptable image | ![](img/bunny500.png)|![](img/denoiser40.png)|
+|Iterations| 500 |40|
+  
 * how denoising at different resolutions impacts runtime
 
 The time needed for running the denoise roughly scale with the image resolution.
@@ -46,14 +51,18 @@ As the filter size increases, the degree of improvement in image optimization ca
 
 
 * how effective/ineffective is this method with different material types
+
 The method is very effective for diffuse and specular materials, but less effective for glass materials. The refraction material generates extremely light dot noise that is hard to be blured by the filter.
+
 | | Diffuse | Perfect Specular | Specular + Refraction (Glass) | 
 |---|---|---|---|
 |Denoiser Off|![](img/denoise_off_diff.png)|![](img/denoise_off_spec.png)|![](img/denoise_off_glass.png)|
 |Denoiser On|![](img/denoise_on_diff.png)|![](img/denoise_on_spec.png)|![](img/denoise_on_glass.png)|
 
 * how do results compare across different scenes
+
 The method is more effective for the regular cornell box light than for the cornell box with the ceiling light. There are extremely light dot noises that are similar to the ones showed up in scenes with glass materials. The filter is not able to deal with too many dots with very high color value.
+
 | cornell | cornell_ceiling_light | 
 |---|---|
 |![](img/no_ceiling.png)|![](img/ceiling.png)|
