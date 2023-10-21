@@ -12,7 +12,15 @@ Tested on: Windows 11, 11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz 22GB, GTX 
 |:-----:|:-----:|
 |<img src="https://github.com/Ibm510000/Project4-CUDA-Denoiser/blob/base-code/img/cornell.2023-10-19_01-52-06z.181samp.png" width="300" height="300">|<img src="https://github.com/Ibm510000/Project4-CUDA-Denoiser/blob/base-code/img/cornell.2023-10-20_23-54-52z.277samp.png" width="300" height="300">
 ### Analysis
+Firstly, Among the tested output, since the denoize time will be affected by the various variables, I analyzed the denoize in the default condition given to us:
+800x800 resolution, 80 filter size. The output is: 4.645Ms
 
-*DO NOT* leave the README to the last minute! It is a crucial part of the
-project, and we will not be able to grade you without a good README.
+
+Based on my observation, with the denoize feature implemented, the iteration amount needed for reaching the acceptable smooth condition was significantly reduced, leading to more efficient and time-saving results in the process.
+
+Also, based on my test I got the following graph amount of the resolution and runtime of denoize:
+
+![Unlock FPS](img/denoize_resolution.png)
+
+It is easy to see that while the resolution increase, the amount of that denoize needed was increased. It is also easy to understand: there are more pixels needed to estimate, and thus takes more time to denoize.
 
