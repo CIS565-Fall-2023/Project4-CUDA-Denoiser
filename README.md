@@ -19,37 +19,37 @@ CUDA Denoiser For CUDA Path Tracer
     <tr>
         <td>  2000spp/204 spp </td>
         <td> 
-            <img src="./img/cornell.png" width= 300px height = 300px >
+            <img src="./img/cornell.png" width= 300px >
         </td>
         <td> 
-            <img src="./img/cornell_n.png" width= 300px height = 300px >
+            <img src="./img/cornell_n.png" width= 300px >
         </td>
         <td> 
-            <img src="./img/cornell_d.png"   width= 300px height = 300px >
+            <img src="./img/cornell_d.png" width= 300px >
         </td>
     </tr> 
     <tr>
         <td> 3500spp/504 spp </td>
         <td> 
-            <img src="./img/teapot.png" width= 300px height = 300px >
+            <img src="./img/teapot.png" width= 300px >
         </td>
         <td> 
-            <img src="./img/teapot_n.png" width= 300px height = 300px >
+            <img src="./img/teapot_n.png" width= 300px  >
         </td>
         <td> 
-            <img src="./img/teapot_d.png"   width= 300px height = 300px >
+            <img src="./img/teapot_d.png"   width= 300px >
         </td>
     </tr> 
     <tr>
         <td> 5000spp/1140 spp </td>
         <td> 
-            <img src="./img/teapot2.png" width= 300px height = 300px >
+            <img src="./img/teapot2.png" width= 300px  >
         </td>
         <td> 
-            <img src="./img/teapot2_n.png" width= 300px height = 300px >
+            <img src="./img/teapot2_n.png" width= 300px >
         </td>
         <td> 
-            <img src="./img/teapot2_d.png"   width= 300px height = 300px >
+            <img src="./img/teapot2_d.png" width= 300px  >
         </td>
     </tr> 
 </table>
@@ -57,6 +57,9 @@ CUDA Denoiser For CUDA Path Tracer
 Denoising will give an "acceptably smooth" result at lower iteration as shown above, however, the image also get somehow blurred out due to the denoising filter.
 
 #### Denoising Runtime - filter size, resolution
+
+![](./img/filter_size.png)
+![](./img/resolution.png)
 
 Denoising will add more time to the renders. For A-tous, it usually slow down the renderer about 10-20FPS. For Guassian, it slower the renderer a lot especially when the filter size is large. Larger filter size will genuinely add more time to the renders. For A-Tous, it adds slightly more time since number of levels need to compute did not increase much as the filter size goes larger and larger. However, for guassian, FPS get a huge markdown due to increasing size of kernel. For resolution, smaller resolution will give better runtime for both unfiltered and denoised image. Denoising will be a good technique for smaller resolution since the image will be blurry anyway for small image, this gives a better approximation for image. 
 
