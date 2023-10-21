@@ -4,6 +4,7 @@
 #include <thrust/execution_policy.h>
 #include <thrust/random.h>
 #include <thrust/remove.h>
+#include <chrono>
 
 #include "sceneStructs.h"
 #include "scene.h"
@@ -546,6 +547,8 @@ void denoise(int ui_filterSize,
     int n = glm::floor(std::log2f((ui_filterSize - 1) * 0.25)) + 1;
     //cout << "number of level: " << n << endl;
 
+    // timer start
+    const auto start = std::chrono::high_resolution_clock::now();
     // loop to apply a tous filter on image
     for (int i = 0; i < n; i++) {
         //cout << "\ti: " << i << endl;
@@ -566,7 +569,12 @@ void denoise(int ui_filterSize,
         // swap the buffer
         std::swap(dev_inputImage, dev_outputImage);
     }
+    cudaDeviceSynchronize();
+    // timer end
+    const auto end = std::chrono::high_resolution_clock::now();
+    auto diff = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+    cout << "duration: " << diff << endl;
+
     cudaMemcpy(hst_scene->state.image.data(), dev_inputImage, pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
-    //cudaDeviceSynchronize();
     //reconstruction <<<blocksPerGrid2d, blockSize2d >>> (cam.resolution, dev_inputImage, dev_diff);
 }
