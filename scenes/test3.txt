@@ -50,7 +50,7 @@ EMITTANCE   0
 
 // BUNNY
 MATERIAL 5
-RGB         .8 .8 .98
+RGB         .95 .85 .28
 SPECEX      0
 SPECRGB     .98 .98 .98
 REFL        0.0
@@ -71,7 +71,7 @@ EMITTANCE   0
 
 // Camera
 CAMERA
-RES         600 600
+RES         800 800
 FOVY        45
 ITERATIONS  5000
 DEPTH       8
@@ -136,4 +136,4 @@ mesh
 material 5
 TRANS       0 0 0
 ROTAT       0 0 0
-SCALE       30 30 30
+SCALE       35 35 35
