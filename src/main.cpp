@@ -25,9 +25,9 @@ int lastLoopIterations = 0;
 bool ui_showGbuffer = false;
 bool ui_denoise = false;
 int ui_filterSize = 80;
-float ui_colorWeight = 0.45f;
-float ui_normalWeight = 0.35f;
-float ui_positionWeight = 0.2f;
+float ui_colorWeight = 0.552f;
+float ui_normalWeight = 0.186f;
+float ui_positionWeight = 0.307f;
 bool ui_saveAndExit = false;
 
 static bool camchanged = true;
@@ -92,7 +92,7 @@ int main(int argc, char** argv) {
     init();
 
     // GLFW main loop
-    mainLoop();
+    mainLoop(camchanged);
 
     return 0;
 }
@@ -144,7 +144,7 @@ void runCuda() {
         cameraPosition += cam.lookAt;
         cam.position = cameraPosition;
         camchanged = false;
-      }
+    }
 
     // Map OpenGL buffer object for writing from CUDA on a single GPU
     // No data is moved (Win & Linux). When mapped to CUDA, OpenGL should not use this buffer
@@ -166,7 +166,7 @@ void runCuda() {
     }
 
     if (ui_showGbuffer) {
-      showGBuffer(pbo_dptr);
+      showGBuffer(pbo_dptr, iteration);
     } else {
       showImage(pbo_dptr, iteration);
     }

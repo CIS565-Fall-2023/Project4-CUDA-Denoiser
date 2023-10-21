@@ -110,7 +110,7 @@ void cleanupCuda() {
 }
 
 void initCuda() {
-    cudaGLSetGLDevice(0);
+    cudaGLSetGLDevice(1);
 
     // Clean up on program exit
     atexit(cleanupCuda);
@@ -188,7 +188,7 @@ bool init() {
 static ImGuiWindowFlags windowFlags= ImGuiWindowFlags_None | ImGuiWindowFlags_NoMove;
 static bool ui_hide = false;
 
-void drawGui(int windowWidth, int windowHeight) {
+void drawGui(int windowWidth, int windowHeight, bool& configChanged) {
     // Dear imgui new frame
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
     ImGui_ImplOpenGL3_NewFrame();
@@ -209,15 +209,16 @@ void drawGui(int windowWidth, int windowHeight) {
     if (ImGui::IsKeyPressed('H')) {
         ui_hide = !ui_hide;
     }
+    ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
 
     ImGui::SliderInt("Iterations", &ui_iterations, 1, startupIterations);
 
-    ImGui::Checkbox("Denoise", &ui_denoise);
+    configChanged |= ImGui::Checkbox("Denoise", &ui_denoise);
 
-    ImGui::SliderInt("Filter Size", &ui_filterSize, 0, 100);
-    ImGui::SliderFloat("Color Weight", &ui_colorWeight, 0.0f, 10.0f);
-    ImGui::SliderFloat("Normal Weight", &ui_normalWeight, 0.0f, 10.0f);
-    ImGui::SliderFloat("Position Weight", &ui_positionWeight, 0.0f, 10.0f);
+    configChanged |= ImGui::SliderInt("Filter Size", &ui_filterSize, 0, 100);
+    configChanged |= ImGui::SliderFloat("Color Weight", &ui_colorWeight, 0.0f, 10.0f);
+    configChanged |= ImGui::SliderFloat("Normal Weight", &ui_normalWeight, 0.0f, 10.0f);
+    configChanged |= ImGui::SliderFloat("Position Weight", &ui_positionWeight, 0.0f, 10.0f);
 
     ImGui::Separator();
 
@@ -235,7 +236,7 @@ void drawGui(int windowWidth, int windowHeight) {
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
 
-void mainLoop() {
+void mainLoop(bool& configChanged) {
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
         runCuda();
@@ -254,7 +255,14 @@ void mainLoop() {
         // Draw imgui
         int display_w, display_h;
         glfwGetFramebufferSize(window, &display_w, &display_h);
-        drawGui(display_w, display_h);
+        drawGui(display_w, display_h, configChanged);
+
+        // update RenderState with UI values
+        scene->state.atrous.denoise = ui_denoise;
+        scene->state.atrous.filterSize = ui_filterSize;
+        scene->state.atrous.c_phi = ui_colorWeight;
+        scene->state.atrous.n_phi = ui_normalWeight;
+        scene->state.atrous.p_phi = ui_positionWeight;
 
         glfwSwapBuffers(window);
     }
