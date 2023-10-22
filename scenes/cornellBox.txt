@@ -62,9 +62,9 @@ EMITTANCE   25  // Increased emittance for a stronger side light
 
 // Camera settings
 CAMERA
-RES         1000 1000
+RES         800 800
 FOVY        45
-ITERATIONS  1500
+ITERATIONS  500
 DEPTH       20
 FILE        simpleCornellBox
 EYE         0.0 5 8

@@ -472,11 +472,11 @@ void denoiser(uchar4* pbo, int iter) {
     cudaMalloc(&dev_denoised_next_image, pixelcount * sizeof(glm::vec3));
     cudaMemset(dev_denoised_next_image, 0, pixelcount * sizeof(glm::vec3));
 
-    cudaEvent_t start, stop;
+    /*cudaEvent_t start, stop;
     cudaEventCreate(&start);
     cudaEventCreate(&stop);
 
-    cudaEventRecord(start);
+    cudaEventRecord(start);*/
     for (int i = 0; i <= hst_scene->state.filterSize; ++i) {
         size_t stepwidth = 1 << i;
 
@@ -495,18 +495,18 @@ void denoiser(uchar4* pbo, int iter) {
 
         std::swap(dev_denoised_curr_image, dev_denoised_next_image);   
     }
-    cudaDeviceSynchronize();
-    cudaEventRecord(stop);
-    cudaEventSynchronize(stop);
+    //cudaDeviceSynchronize();
+    //cudaEventRecord(stop);
+    //cudaEventSynchronize(stop);
 
-    // Calculate and print the elapsed time in milliseconds
-    float milliseconds = 0;
-    cudaEventElapsedTime(&milliseconds, start, stop);
-    printf("Denoiser running time: %.3f ms\n", milliseconds);
+    //// Calculate and print the elapsed time in milliseconds
+    //float milliseconds = 0;
+    //cudaEventElapsedTime(&milliseconds, start, stop);
+    //printf("Denoiser running time: %.3f ms\n", milliseconds);
 
-    // Destroy the CUDA events
-    cudaEventDestroy(start);
-    cudaEventDestroy(stop);
+    //// Destroy the CUDA events
+    //cudaEventDestroy(start);
+    //cudaEventDestroy(stop);
 
     sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, iter, dev_denoised_curr_image);
     // cudaMemcpy(dev_image, dev_denoised_curr_image, pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToDevice);

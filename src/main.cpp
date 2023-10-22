@@ -23,11 +23,11 @@ int ui_iterations = 0;
 int startupIterations = 0;
 int lastLoopIterations = 0;
 bool ui_showGbuffer = false;
-bool ui_denoise = false;
-int ui_filterSize = 100;
-float ui_colorWeight = 0.719f;
-float ui_normalWeight = 0.631f;
-float ui_positionWeight = 0.153f;
+bool ui_denoise = true;
+int ui_filterSize = 16;
+float ui_colorWeight = 0.7f;
+float ui_normalWeight = 0.6f;
+float ui_positionWeight = 0.1f;
 bool ui_saveAndExit = false;
 
 static bool camchanged = true;
@@ -188,7 +188,6 @@ void runCuda() {
     if (ui_saveAndExit) {
         saveImage();
         pathtraceFree();
-        denoiserFree();
         cudaDeviceReset();
         exit(EXIT_SUCCESS);
     }
