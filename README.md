@@ -396,9 +396,10 @@ The following table depicts the image quality at different filter sizes.
 
 In simpler scenes, the impact of filter size on image quality isn't immediately discernible. However, a closer examination reveals that larger filter sizes tend to blur the image more, as demonstrated in the gifs below.
 
+
 <div align="center">
 
-![Filter Size](./img/filtersize.gif)
+![Filter Size](./img/filterSize.gif)
 
 </div>
 
