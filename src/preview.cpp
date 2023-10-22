@@ -215,13 +215,15 @@ void drawGui(int windowWidth, int windowHeight) {
     ImGui::Checkbox("Denoise", &ui_denoise);
 
     ImGui::SliderInt("Filter Size", &ui_filterSize, 0, 100);
-    ImGui::SliderFloat("Color Weight", &ui_colorWeight, 0.0f, 10.0f);
-    ImGui::SliderFloat("Normal Weight", &ui_normalWeight, 0.0f, 10.0f);
-    ImGui::SliderFloat("Position Weight", &ui_positionWeight, 0.0f, 10.0f);
+    ImGui::SliderFloat("Color Weight", &ui_colorWeight, 0.0f, 1.0f);
+    ImGui::SliderFloat("Normal Weight", &ui_normalWeight, 0.0f, 1.0f);
+    ImGui::SliderFloat("Position Weight", &ui_positionWeight, 0.0f, 1.0f);
 
     ImGui::Separator();
 
     ImGui::Checkbox("Show GBuffer", &ui_showGbuffer);
+    ImGui::Checkbox("Show GBuffer Normal", &ui_showGbufferNormal);
+    ImGui::Checkbox("Show GBuffer Position", &ui_showGbufferPos);
 
     ImGui::Separator();
 
@@ -255,6 +257,12 @@ void mainLoop() {
         int display_w, display_h;
         glfwGetFramebufferSize(window, &display_w, &display_h);
         drawGui(display_w, display_h);
+
+        scene->state.denoise = ui_denoise;
+        scene->state.filterSize = ui_filterSize;
+        scene->state.c_phi = ui_colorWeight;
+        scene->state.n_phi = ui_normalWeight;
+        scene->state.p_phi = ui_positionWeight;
 
         glfwSwapBuffers(window);
     }

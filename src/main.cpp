@@ -23,11 +23,11 @@ int ui_iterations = 0;
 int startupIterations = 0;
 int lastLoopIterations = 0;
 bool ui_showGbuffer = false;
-bool ui_denoise = false;
-int ui_filterSize = 80;
-float ui_colorWeight = 0.45f;
-float ui_normalWeight = 0.35f;
-float ui_positionWeight = 0.2f;
+bool ui_denoise = true;
+int ui_filterSize = 16;
+float ui_colorWeight = 0.7f;
+float ui_normalWeight = 0.6f;
+float ui_positionWeight = 0.1f;
 bool ui_saveAndExit = false;
 
 static bool camchanged = true;
@@ -44,6 +44,10 @@ int iteration;
 
 int width;
 int height;
+
+// customized UI
+bool ui_showGbufferNormal = false;
+bool ui_showGbufferPos = false;
 
 //-------------------------------
 //-------------MAIN--------------
@@ -112,8 +116,11 @@ void saveImage() {
 
     std::string filename = renderState->imageName;
     std::ostringstream ss;
+    ss << "../img/";
     ss << filename << "." << startTimeString << "." << samples << "samp";
     filename = ss.str();
+    cout << "Image is saved at " << filename << endl;
+    cout << "" << endl;
 
     // CHECKITOUT
     img.savePNG(filename);
@@ -165,9 +172,13 @@ void runCuda() {
         pathtrace(frame, iteration);
     }
 
-    if (ui_showGbuffer) {
-      showGBuffer(pbo_dptr);
-    } else {
+    if (ui_showGbuffer || ui_showGbufferNormal || ui_showGbufferPos) {
+      showGBuffer(pbo_dptr, iteration, ui_showGbuffer, ui_showGbufferNormal);
+    }
+    else if (ui_denoise) {
+        denoiser(pbo_dptr, iteration);
+    }
+    else {
       showImage(pbo_dptr, iteration);
     }
 

@@ -73,6 +73,7 @@ set(headers
     src/sceneStructs.h
     src/preview.h
     src/utilities.h
+    src/denoiser.h
     )
 
 set(sources
@@ -96,8 +97,6 @@ set(imgui
     imgui/imgui_demo.cpp
     imgui/imgui_impl_glfw.cpp
     imgui/imgui_impl_glfw.h
-    imgui/imgui_impl_opengl2.cpp
-    imgui/imgui_impl_opengl2.h
     imgui/imgui_impl_opengl3.cpp
     imgui/imgui_impl_opengl3.h
     )
