@@ -35,6 +35,8 @@ CUDA Denoiser For CUDA Path Tracer
 * [Performance Analysis](#performance-analysis)
 * [Bloopers](#bloopers)
 
+---
+
 ## Overview
 
 Monte Carlo ray tracing is widely recognized for its ability to produce realistic images. However, it comes with a trade-off: the introduction of noise, particularly when utilizing fewer samples. To address this challenge, I implemented the [*The Edge-Avoiding À-Trous Wavelet Transform Denoiser*](https://jo.dreggn.org/home/2010_atrous.pdf). Enhanced by the computational prowess of CUDA, this denoiser swiftly eliminates the unwanted noise, delivering clearer images without compromising on their integral details.
@@ -384,10 +386,10 @@ The following table depicts the image quality at different filter sizes.
         </tr>
         <tr>
             <td><img src="./img/cornell_ceiling_light.png" width="300"/></td>
-            <td><img src="./img/filtersize16.png" width="300"/></td>
-            <td><img src="./img/filtersize32.png" width="300"/></td>
-            <td><img src="./img/filtersize64.png" width="300"/></td>
-            <td><img src="./img/filtersize96.png" width="300"/></td>
+            <td><img src="./img/filterSize16.png" width="300"/></td>
+            <td><img src="./img/filterSize32.png" width="300"/></td>
+            <td><img src="./img/filterSize64.png" width="300"/></td>
+            <td><img src="./img/filterSize96.png" width="300"/></td>
         </tr>
     </table>
 </div>
