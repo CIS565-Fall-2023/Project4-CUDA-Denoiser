@@ -1,5 +1,6 @@
 //#define _CRT_SECURE_NO_DEPRECATE
 #include <ctime>
+#include <chrono>
 #include "main.h"
 #include "preview.h"
 #include "ImGui/imgui.h"
@@ -9,15 +10,14 @@ GLuint positionLocation = 0;
 GLuint texcoordsLocation = 1;
 GLuint pbo;
 GLuint displayImage;
-extern uint64_t sysTime;
-extern uint64_t delta_t;
 
-#define CAM_SPEED 0.1f;
+#define CAM_SPEED 5.0f;
 
 GLFWwindow* window;
 GuiDataContainer* imguiData = NULL;
 ImGuiIO* io = nullptr;
 bool mouseOverImGuiWinow = false;
+float camAnimTime = 0.0f;
 
 extern RenderState* renderState;
 extern float zoom, theta, phi;
@@ -204,6 +204,7 @@ void InitImguiData(GuiDataContainer* guiData)
 // LOOK: Un-Comment to check ImGui Usage
 void RenderImGui()
 {
+	if (!display_ui) return;
 	mouseOverImGuiWinow = io->WantCaptureMouse;
 
 	ImGui_ImplOpenGL3_NewFrame();
@@ -215,27 +216,18 @@ void RenderImGui()
 	ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 	static float f = 0.0f;
 	static int counter = 0;
-
+	/*
+	*	Analytics
+	*/
 	ImGui::Begin("Path Tracer Analytics");                  // Create a window called "Hello, world!" and append into it.
-	
-	// LOOK: Un-Comment to check the output window and usage
-	//ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
-	//ImGui::Checkbox("Demo Window", &show_demo_window);      // Edit bools storing our window open/close state
-	//ImGui::Checkbox("Another Window", &show_another_window);
-
-	//ImGui::SliderFloat("float", &f, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
-	//ImGui::ColorEdit3("clear color", (float*)&clear_color); // Edit 3 floats representing a color
-
-	//if (ImGui::Button("Button"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
-	//	counter++;
-	//ImGui::SameLine();
-	//ImGui::Text("counter = %d", counter);
 	ImGui::Text("Traced Depth %d", imguiData->TracedDepth);
 	ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
 	ImGui::Text("Num triangles: %d", scene->triangles.size());
 	ImGui::Text("Num bvh nodes: %d", scene->bvhTreeSize);
 	ImGui::End();
-
+	/*
+	*	Camera Settings
+	*/
 	ImGui::Begin("Camera Settings");
 	if (ImGui::SliderFloat("Theta", &theta, 0.0f, PI))
 		camchanged = true;
@@ -251,9 +243,130 @@ void RenderImGui()
 		camchanged = true;
 	if (ImGui::SliderFloat("Focal Length", &renderState->camera.focalLength, 0.1f, 20.0f))
 		camchanged = true;
+	ImGui::End();
+	/*
+	*	Visualization Settings
+	*/
+	ImGui::Begin("Visualization Settings");
+	static int selected_item = 0;
+	const char* items[] = { "Render","GBuffer"};
+	if (ImGui::BeginCombo("Type", items[selected_item]))
+	{
+		for (int n = 0; n < IM_ARRAYSIZE(items); n++)
+		{
+			bool is_selected = (selected_item == n);
+			if (ImGui::Selectable(items[n], is_selected))
+			{
+				selected_item = n;
+				switch (n)
+				{
+				case 0:
+					visType = render;
+					break;
+				case 1:
+					visType = gbuffer;
+					break;
+				}
+				camchanged = true;
+			}
 
+			if (is_selected)
+			{
+				ImGui::SetItemDefaultFocus();
+			}
+		}
+		
+		ImGui::EndCombo();
+	}
+	if (visType == gbuffer)
+	{
+		static int selected_item = 0;
+		const char* items[] = { "Time of flight","Position","Normal","Velocity", "Albedo", "Emission", "Depth"};
+		if (ImGui::BeginCombo("GBuffer", items[selected_item]))
+		{
+			for (int n = 0; n < IM_ARRAYSIZE(items); n++)
+			{
+				bool is_selected = (selected_item == n);
+				if (ImGui::Selectable(items[n], is_selected))
+				{
+					selected_item = n;
+					switch (n)
+					{
+					case 0:
+						gbufVisType = gTime;
+						break;
+					case 1:
+						gbufVisType = gPosition;
+						break;
+					case 2:
+						gbufVisType = gNormal;
+						break;
+					case 3:
+						gbufVisType = gVelocity;
+						break;
+					case 4:
+						gbufVisType = gAlbedo;
+						break;
+					case 5:
+						gbufVisType = gEmission;
+						break;
+					case 6:
+						gbufVisType = gDepth;
+						break;
+					}
+				}
+
+				if (is_selected)
+				{
+					ImGui::SetItemDefaultFocus();
+				}
+			}
+			ImGui::EndCombo();
+		}
+	}
 	ImGui::End();
 
+	ImGui::Begin("Denoise Settings");
+	
+	if (ImGui::Checkbox("Denoise", &denoise_enabled))
+	{
+		camchanged = true;
+		//denoiseClear();
+	}
+	ImGui::Checkbox("Animate Camera", &animate_camera);
+	if (denoise_enabled)
+	{
+		static int selected_item = 0;
+		const char* items[] = { "EAW","SVGF" };
+		if (ImGui::BeginCombo("GBuffer", items[selected_item]))
+		{
+			for (int n = 0; n < IM_ARRAYSIZE(items); n++)
+			{
+				bool is_selected = (selected_item == n);
+				if (ImGui::Selectable(items[n], is_selected))
+				{
+					selected_item = n;
+					switch (n)
+					{
+					case 0:
+						denoiserType = EAW;
+						break;
+					case 1:
+						denoiserType = SVGF;
+						break;
+					}
+					camchanged = true;
+				}
+
+				if (is_selected)
+				{
+					ImGui::SetItemDefaultFocus();
+				}
+			}
+			ImGui::EndCombo();
+		}
+	}
+	ImGui::End();
 
 	ImGui::Render();
 	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -269,32 +382,47 @@ void mainLoop() {
 	while (!glfwWindowShouldClose(window)) {
 		
 		glfwPollEvents();
-		uint64_t currTime = time(nullptr);
-		delta_t = currTime - sysTime;
-		sysTime = currTime;
+		auto currTime = std::chrono::high_resolution_clock::now();
+		float deltaT = std::chrono::duration_cast<std::chrono::duration<float>>(currTime - lastTime).count();
+		lastTime = currTime;
+		
 		if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
 		{
 			camchanged = true;
-			renderState->camera.position += renderState->camera.view * CAM_SPEED;
+			renderState->camera.position += renderState->camera.view * deltaT * CAM_SPEED;
 		}
 		if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
 		{
 			camchanged = true;
-			renderState->camera.position -= renderState->camera.view * CAM_SPEED;
+			renderState->camera.position -= renderState->camera.view * deltaT * CAM_SPEED;
 		}
 		if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
 		{
 			camchanged = true;
-			renderState->camera.position -= renderState->camera.right * CAM_SPEED;
+			renderState->camera.position -= renderState->camera.right * deltaT * CAM_SPEED;
 		}
 		if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
 		{
 			camchanged = true;
-			renderState->camera.position += renderState->camera.right * CAM_SPEED;
+			renderState->camera.position += renderState->camera.right * deltaT * CAM_SPEED;
+		}
+		glm::vec3 center = renderState->camera.position;
+		glm::vec3 offsetCenter = center;
+		if (animate_camera)
+		{
+			camAnimTime += deltaT;
+			offsetCenter += cos(camAnimTime * 2.0f) * camMoveRadius * glm::normalize(renderState->camera.right);
+			offsetCenter += sin(camAnimTime * 2.0f) * camMoveRadius * glm::normalize(renderState->camera.view);
+			renderState->camera.position = offsetCenter;
+			camchanged = true;
 		}
 			
 		runCuda();
-		
+
+		if (animate_camera)
+		{
+			renderState->camera.position = center;
+		}
 
 		string title = "CIS565 Path Tracer | " + utilityCore::convertIntToString(iteration) + " Iterations";
 		glfwSetWindowTitle(window, title.c_str());
@@ -309,10 +437,22 @@ void mainLoop() {
 		// VAO, shader program, and texture already bound
 		glDrawElements(GL_TRIANGLES, 6,  GL_UNSIGNED_SHORT, 0);
 
+		Camera& cam = renderState->camera;
+		if (animate_camera)
+			renderState->lastCamInfo.position = offsetCenter;
+		else
+			renderState->lastCamInfo.position = cam.position;
+		renderState->lastCamInfo.view = cam.view;
+		renderState->lastCamInfo.right = cam.right;
+		renderState->lastCamInfo.up = cam.up;
+		//renderState->prevViewProj = glm::perspective(cam.fovAngle * (PI / 180), (float)cam.resolution.x / cam.resolution.y, 0.01f, 3000.0f) * glm::lookAt(cam.position, cam.position + cam.view, cam.up);
+
 		// Render ImGui Stuff
 		RenderImGui();
 
 		glfwSwapBuffers(window);
+
+		
 	}
 
 	ImGui_ImplOpenGL3_Shutdown();

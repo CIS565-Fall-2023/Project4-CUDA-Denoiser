@@ -69,6 +69,7 @@ set(headers
     src/intersections.h
     src/glslUtility.hpp
     src/pathtrace.h
+    src/denoise.h
     src/scene.h
     src/sceneStructs.h
     src/preview.h
@@ -92,6 +93,7 @@ set(sources
     src/stb.cpp
     src/image.cpp
     src/glslUtility.cpp
+    src/denoise.cu
     src/pathtrace.cu
     src/scene.cpp
     src/preview.cpp
@@ -124,3 +126,4 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
     #stream_compaction  # TODO: uncomment if using your stream compaction
     OpenImageDenoise
     )
+

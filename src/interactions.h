@@ -292,7 +292,7 @@ __device__ inline float util_mis_weight_balanced(float pdf1, float pdf2)
 	return pdf1 / (pdf1 + pdf2);
 }
 
-__device__ float lights_sample_pdf(const SceneInfoDev& sceneInfo, int lightPrimID)
+__device__ float lights_sample_pdf(const SceneInfoPtrs& sceneInfo, int lightPrimID)
 {
 	if(!sceneInfo.lightsSize) return -1;
 	float prob = 1.0 / sceneInfo.lightsSize;
@@ -330,7 +330,7 @@ __device__ float lights_sample_pdf(const SceneInfoDev& sceneInfo, int lightPrimI
 	}
 }
 
-__device__ void lights_sample(const SceneInfoDev& sceneInfo, const glm::vec3& random, const glm::vec3& position, const glm::vec3& normal, glm::vec3* lightPos, glm::vec3* lightNormal, glm::vec3* emissive, float* pdf)
+__device__ void lights_sample(const SceneInfoPtrs& sceneInfo, const glm::vec3& random, const glm::vec3& position, const glm::vec3& normal, glm::vec3* lightPos, glm::vec3* lightNormal, glm::vec3* emissive, float* pdf)
 {
 	if (!sceneInfo.lightsSize) return;
 	float fchosen = random.x * sceneInfo.lightsSize;

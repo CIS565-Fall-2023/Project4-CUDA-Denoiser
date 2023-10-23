@@ -8,9 +8,9 @@ EMITTANCE   3
 
 // Camera
 CAMERA
-RES         1000 1000
+RES         1080 1080
 FOVY        45
-ITERATIONS  100
+ITERATIONS  1
 DEPTH       8
 FILE        sponza
 EYE         0.0 5 10.5

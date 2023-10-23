@@ -1,7 +1,7 @@
 #include "main.h"
 #include "preview.h"
 #include <cstring>
-#include <chrono>
+
 #include <stb_image.h>
 #include <OpenImageDenoise/oidn.h>
 static std::string startTimeString;
@@ -12,8 +12,7 @@ static bool rightMousePressed = false;
 static bool middleMousePressed = false;
 static double lastX;
 static double lastY;
-uint64_t sysTime;
-uint64_t delta_t;
+std::chrono::high_resolution_clock::time_point lastTime;
 
 bool camchanged = true;
 static float dtheta = 0, dphi = 0;
@@ -27,11 +26,21 @@ Scene* scene;
 GuiDataContainer* guiData;
 RenderState* renderState;
 int iteration;
+VisualizationType visType = render;
+GBufferVisualizationType gbufVisType = gTime;
+bool denoise_enabled = false;
+float camMoveRadius = 1.0f;
+bool denoised = false;
 
 int width;
 int height;
 
 OIDNDevice device;
+
+bool animate_camera = false;
+bool display_ui = true;
+DenoiserType denoiserType = EAW;
+
 
 //-------------------------------
 //-------------MAIN--------------
@@ -57,7 +66,6 @@ int main(int argc, char** argv) {
 
 	//Create Instance for ImGUIData
 	guiData = new GuiDataContainer();
-	sysTime = time(nullptr);
 	// Set up camera stuff from loaded path tracer settings
 	iteration = 0;
 	renderState = &scene->state;
@@ -92,10 +100,14 @@ int main(int argc, char** argv) {
 
 	device = oidnNewDevice(OIDN_DEVICE_TYPE_DEFAULT); // CPU or GPU if available
 	oidnCommitDevice(device);
+	pathtraceInit(scene);
+	lastTime = std::chrono::high_resolution_clock::now();
 	// GLFW main loop
 	mainLoop();
-
+	pathtraceFree(scene);
+	cudaDeviceReset();
 	oidnReleaseDevice(device);
+	exit(EXIT_SUCCESS);
 	return 0;
 }
 
@@ -103,7 +115,7 @@ void saveImage() {
 	float samples = iteration;
 	// output image file
 	image img(width, height);
-#if DENOISE
+#if OIDN_DENOISE
 	DrawGbuffer(16);
 	for (int x = 0; x < width; x++) {
 		for (int y = 0; y < height; y++) {
@@ -162,7 +174,7 @@ void saveImage() {
 	std::string filename = renderState->imageName;
 	std::ostringstream ss;
 	ss << filename << "." << startTimeString << "." << samples << "samp";
-#if DENOISE
+#if OIDN_DENOISE
 	ss << "_denoised";
 #endif
 	filename = ss.str();
@@ -173,6 +185,7 @@ void saveImage() {
 }
 
 void runCuda() {
+	
 	if (camchanged) {
 		iteration = 0;
 		Camera& cam = renderState->camera;
@@ -182,10 +195,9 @@ void runCuda() {
 
 		glm::vec3 v = cam.view;
 		glm::vec3 u = glm::vec3(0, 1, 0);//glm::normalize(cam.up);
-		glm::vec3 r = glm::cross(v, u);
-		cam.up = glm::cross(r, v);
+		glm::vec3 r = glm::normalize(glm::cross(v, u));
+		cam.up = glm::normalize(glm::cross(r, v));
 		cam.right = r;
-
 		//cam.position = cameraPosition;
 		camchanged = false;
 	}
@@ -194,28 +206,49 @@ void runCuda() {
 	// No data is moved (Win & Linux). When mapped to CUDA, OpenGL should not use this buffer
 
 	if (iteration == 0) {
-		pathtraceFree(scene);
-		pathtraceInit(scene);
+		/*pathtraceFree(scene);
+		pathtraceInit(scene);*/
+		pathtraceClear();
+		//denoiseClear();
+		denoised = false;
 	}
 
 	if (iteration < renderState->iterations) {
-		uchar4* pbo_dptr = NULL;
+		
 		iteration++;
-		cudaGLMapBufferObject((void**)&pbo_dptr, pbo);
-
 		// execute the kernel
 		int frame = 0;
-		pathtrace(pbo_dptr, frame, iteration);
+		pathtrace(iteration, denoise_enabled);
+	}
+	//else {
+	//	//saveImage();
+	//	/*pathtraceFree(scene);
+	//	cudaDeviceReset();
+	//	exit(EXIT_SUCCESS);*/
+	//}
 
-		// unmap buffer object
-		cudaGLUnmapBufferObject(pbo);
+	if (iteration == renderState->iterations && denoise_enabled && !denoised)
+	{
+		denoised = true;
+		if (denoiserType == SVGF)
+			svgfDenoise(iteration);
+		else
+			eawDenoise(iteration, { 0.033f,1.0f,1.0f,1.0f }, true);
 	}
-	else {
-		saveImage();
-		pathtraceFree(scene);
-		cudaDeviceReset();
-		exit(EXIT_SUCCESS);
+	uchar4* pbo_dptr = NULL;
+	cudaGLMapBufferObject((void**)&pbo_dptr, pbo);
+	if (visType == render)
+	{
+		if(denoise_enabled&&denoised)
+			showRenderedImage(pbo_dptr, scene->state.camera.resolution, 1, denoise_enabled);
+		else
+			showRenderedImage(pbo_dptr, scene->state.camera.resolution, iteration, denoise_enabled);
 	}
+	else
+	{
+		showGBuffer(pbo_dptr, scene->state.camera.resolution, gbufVisType, iteration);
+	}
+	cudaGLUnmapBufferObject(pbo);
 }
 
 void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
@@ -228,12 +261,16 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
 		case GLFW_KEY_Q:
 			saveImage();
 			break;
+		case GLFW_KEY_H:
+			display_ui = !display_ui;
+			break;
 		case GLFW_KEY_SPACE:
 			camchanged = true;
 			renderState = &scene->state;
 			Camera& cam = renderState->camera;
 			cam.lookAt = ogLookAt;
 			break;
+		
 		}
 		
 	}

@@ -8,20 +8,31 @@
 #define USE_BVH 1
 #define USE_MIS 1
 #define MTBVH 1
-#define DENOISE 1
+#define OIDN_DENOISE 0
 #define VIS_NORMAL 0
 #define TONEMAPPING 1
-#define DOF_ENABLED 1
+#define STOCHASTIC_SAMPLING 0
+#define DOF_ENABLED 0
 #define SCATTER_ORIGIN_OFFSETMULT 0.001f
 #define BOUNDING_BOX_EXPAND 0.001f
 #define ALPHA_CUTOFF 0.01f
-#define STOCHASTIC_SAMPLING 1
-#define FIRST_INTERSECTION_CACHING 1
+#define FIRST_INTERSECTION_CACHING 0
 #define MAX_DEPTH 8
 #define SORT_BY_MATERIAL_TYPE 0
 #define MAX_NUM_PRIMS_IN_LEAF 2
 #define SAH_BUCKET_SIZE 20
 #define SAH_RAY_BOX_INTERSECTION_COST 0.1f
+
+
+#define OCT_ENCODE_NORMAL 1
+#define MAX_HIST_LEN 32.0f
+#define ZDIFF_THRESHOLD 25.0f
+#define NORMALDIFF_THRESHOLD 10.0f
+#define LUMIN_BLEND_ALPHA 0.1f
+#define MOMENTS_BLEND_ALPHA 0.1f
+#define LUMIN_COEFF 3.0f
+#define NORMAL_COEFF 10.0f
+#define DEPTH_COEFF 5.0f
 
 enum GeomType {
     SPHERE,
@@ -135,17 +146,25 @@ struct Camera {
     glm::vec3 right;
     glm::vec2 fov;
     glm::vec2 pixelLength;
+    float fovAngle;
     float lensRadius = 0.001f;
     float focalLength = 1.0f;
 };
 
+struct LastCameraInfo {
+    glm::vec3 position;
+    glm::vec3 view;
+    glm::vec3 up;
+    glm::vec3 right;
+};
+
 struct RenderState {
     Camera camera;
+    LastCameraInfo lastCamInfo;
+    glm::mat4 prevViewProj;
     unsigned int iterations;
     int traceDepth;
     std::vector<glm::vec3> image;
-    std::vector<glm::vec3> albedo;
-    std::vector<glm::vec3> normal;
     std::string imageName;
 };
 
@@ -181,7 +200,7 @@ struct ModelInfoDev {
     float* dev_fsigns;
 };
 
-struct SceneInfoDev {
+struct SceneInfoPtrs {
     Material* dev_materials;
     Object* dev_objs;
     int objectsSize;
@@ -197,8 +216,57 @@ struct SceneInfoDev {
     cudaTextureObject_t skyboxObj;
 };
 
-struct SceneGbuffer {
-    glm::vec3* dev_albedo;
-    glm::vec3* dev_normal;
+struct EAWParams {
+    float sigmaCol;
+    float sigmaAlbe;
+    float sigmaPos;
+    float sigmaNorm;
 };
+
+struct SVGFParams {
+
+};
+
+struct SceneGbufferPtrs {
+    float* dev_t;
+    float* dev_z;
+    glm::vec3* dev_emission;
+    glm::vec3* dev_albedo;
+#if OCT_ENCODE_NORMAL
+    glm::vec2* dev_normal;
+#else
+    glm::vec3* dev_normal;
+#endif
+//    glm::vec3* dev_position;
+    glm::vec2* dev_velocity;
+    glm::vec2* dev_znormalfwidth;
+    int* dev_primID;
+};
+
+enum VisualizationType {
+    render, gbuffer
+};
+
+enum GBufferVisualizationType {
+    gTime, gPosition, gNormal, gVelocity, gAlbedo, gEmission, gDepth
+};
+
+enum DenoiserType {
+    EAW, SVGF
+};
+
+
+struct SVGFBufferPtrs {
+    glm::vec4* dev_illum;
+    glm::vec2* dev_moments;
+    float* dev_history_len;
+    float* dev_z;
+#if OCT_ENCODE_NORMAL
+    glm::vec2* dev_normal;
+#else
+    glm::vec3* dev_normal;
+#endif
+    int* dev_primID;
+};
+
 

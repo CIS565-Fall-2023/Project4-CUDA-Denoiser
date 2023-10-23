@@ -211,7 +211,7 @@ static void GLTFNodeGetLocalTransform(tinygltf::Node& node, glm::mat4& localTran
     }
 }
 
-static void GLTFNodetopologicalSort(std::vector<tinygltf::Node>& nodes, std::vector<int>& sortedIdx)
+static void GLTFNodeTopologicalSort(std::vector<tinygltf::Node>& nodes, std::vector<int>& sortedIdx)
 {
     std::vector<int> inDegs(nodes.size());
     std::queue<int> q;
@@ -225,7 +225,7 @@ static void GLTFNodetopologicalSort(std::vector<tinygltf::Node>& nodes, std::vec
     for (int i = 0; i < inDegs.size(); i++)
     {
         if (inDegs[i] == 0)
-        {
+        {   
             q.emplace(i);
         }
     }
@@ -558,7 +558,7 @@ bool Scene::loadModel(const string& modelPath, int objectid, bool useVertexNorma
        
         std::unordered_map<int, glm::mat4> globalTransRec;
         std::vector<int> sortedIdx;
-        GLTFNodetopologicalSort(model.nodes, sortedIdx);
+        GLTFNodeTopologicalSort(model.nodes, sortedIdx);
 
         for (size_t i = 0; i < model.nodes.size(); ++i)
         {
@@ -889,6 +889,7 @@ int Scene::loadCamera() {
     }
 
     //calculate fov based on resolution
+    camera.fovAngle = fovy * 2.0f;
     float yscaled = tan(fovy * (PI / 180));
     float xscaled = (yscaled * camera.resolution.x) / camera.resolution.y;
     float fovx = (atan(xscaled) * 180) / PI;
@@ -899,6 +900,11 @@ int Scene::loadCamera() {
                                    2 * yscaled / (float)camera.resolution.y);
 
     camera.view = glm::normalize(camera.lookAt - camera.position);
+    state.lastCamInfo.position = camera.position;
+    state.lastCamInfo.view = camera.view;
+    state.lastCamInfo.right = camera.right;
+    state.lastCamInfo.up = camera.up;
+    //state.prevViewProj = glm::perspective(camera.fovAngle * (PI / 180), (float)camera.resolution.x / camera.resolution.y, 0.01f, 3000.0f) * glm::lookAt(camera.position, camera.position + camera.view, camera.up);
 
     //set up render camera stuff
     int arraylen = camera.resolution.x * camera.resolution.y;

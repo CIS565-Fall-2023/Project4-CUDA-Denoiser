@@ -6,8 +6,13 @@
 void InitDataContainer(GuiDataContainer* guiData);
 void pathtraceInit(Scene *scene);
 void pathtraceFree(Scene* scene);
-void pathtrace(uchar4 *pbo, int frame, int iteration);
-void DrawGbuffer(int numIter);
+void pathtrace(int iter, bool drawGbuffer);
+void pathtraceClear();
+void showRenderedImage(uchar4* pbo, glm::ivec2 resolution, int iter, bool denoise);
+void showGBuffer(uchar4* pbo, glm::ivec2 resolution, GBufferVisualizationType gbufType, int iter);
+void eawDenoise(int iter, EAWParams params, bool edgeAwared);
+void svgfDenoise(int iter);
+void denoiseClear();
 
 //https://knarkowicz.wordpress.com/2016/01/06/aces-filmic-tone-mapping-curve/
 __host__ __device__ inline glm::vec3 util_postprocess_ACESFilm(glm::vec3 x)

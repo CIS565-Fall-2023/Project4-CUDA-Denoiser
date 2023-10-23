@@ -237,7 +237,7 @@ __device__ inline glm::vec2 util_sample_spherical_map(glm::vec3 v)
 __device__ inline bool util_bvh_leaf_intersect(
     int primsStart,
     int primsEnd,
-    const SceneInfoDev& dev_sceneInfo,
+    const SceneInfoPtrs& dev_sceneInfo,
     const Ray& ray,
     ShadeableIntersection* intersection
 )
@@ -311,7 +311,7 @@ __device__ inline bool util_bvh_leaf_intersect(
 __device__ inline float util_bvh_leaf_test_intersect(
     int primsStart,
     int primsEnd,
-    const SceneInfoDev& dev_sceneInfo,
+    const SceneInfoPtrs& dev_sceneInfo,
     const Ray& ray
 )
 {
@@ -347,7 +347,7 @@ __device__ inline float util_bvh_leaf_test_intersect(
 }
 
 
-__host__ __device__ bool util_test_visibility(glm::vec3 p0, glm::vec3 p1, const SceneInfoDev& dev_sceneInfo)
+__host__ __device__ bool util_test_visibility(glm::vec3 p0, glm::vec3 p1, const SceneInfoPtrs& dev_sceneInfo)
 {
     glm::vec3 dir = p1 - p0;
     if (glm::length(dir) < 0.001f) return true;
@@ -388,7 +388,7 @@ __host__ __device__ bool util_test_visibility(glm::vec3 p0, glm::vec3 p1, const 
 }
 
 
-__device__ bool util_bvh_test_visibility(glm::vec3 p0, glm::vec3 p1, const SceneInfoDev& dev_sceneInfo)
+__device__ bool util_bvh_test_visibility(glm::vec3 p0, glm::vec3 p1, const SceneInfoPtrs& dev_sceneInfo)
 {
     glm::vec3 dir = p1 - p0;
     if (glm::length(dir) < 0.001f) return true;

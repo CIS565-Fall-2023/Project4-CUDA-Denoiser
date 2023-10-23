@@ -15,7 +15,7 @@
 #include "pathtrace.h"
 #include "intersections.h"
 #include "interactions.h"
-
+#include "denoise.h"
 #define ERRORCHECK 1
 
 
@@ -91,9 +91,122 @@ __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution,
 	}
 }
 
+__global__ void vec4ToPBO(uchar4* pbo, glm::ivec2 resolution,
+	int iter, glm::vec4* image) {
+	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+
+	if (x < resolution.x && y < resolution.y) {
+		int index = x + (y * resolution.x);
+		glm::vec3 pix = glm::vec3(image[index]);
+
+		glm::vec3 color;
+#if TONEMAPPING
+		color = pix / (float)iter;
+		color = util_postprocess_gamma(util_postprocess_ACESFilm(color));
+		color = color * 255.0f;
+#else
+		color.x = glm::clamp((int)(pix.x / iter * 255.0), 0, 255);
+		color.y = glm::clamp((int)(pix.y / iter * 255.0), 0, 255);
+		color.z = glm::clamp((int)(pix.z / iter * 255.0), 0, 255);
+#endif
+		if (util_math_is_nan(pix))
+		{
+			pbo[index].x = 255;
+			pbo[index].y = 192;
+			pbo[index].z = 203;
+		}
+		else
+		{
+			// Each thread writes one pixel location in the texture (textel)
+			pbo[index].x = color.x;
+			pbo[index].y = color.y;
+			pbo[index].z = color.z;
+		}
+		pbo[index].w = 0;
+	}
+}
+
+
+__global__ void gbufferToPBO(uchar4* pbo, glm::ivec2 resolution, SceneGbufferPtrs gBuffer, GBufferVisualizationType type, RenderState state) {
+	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+
+	if (x < resolution.x && y < resolution.y) {
+		int index = x + (y * resolution.x);
+		float timeToIntersect = gBuffer.dev_t[index] * 256.0;
+		int primID = gBuffer.dev_primID[index];
+		if (primID == -1)
+		{
+			pbo[index].w = 0;
+			pbo[index].x = 0;
+			pbo[index].y = 0;
+			pbo[index].z = 0;
+			return;
+		}
+		glm::vec3 pos = glm::clamp(util_get_world_position(glm::vec2(x,y), gBuffer.dev_z[index], state.camera.position, state.camera.view, state.camera.up, state.camera.right, state.camera.resolution, state.camera.pixelLength) * 256.0f, 0.0f, 255.0f);
+		glm::vec3 normal = glm::clamp((util_oct_to_vec3(gBuffer.dev_normal[index]) * 0.5f + 0.5f) * 256.0f, 0.0f, 255.0f);
+		glm::vec3 velocity = glm::clamp((glm::vec3(glm::abs(gBuffer.dev_velocity[index]), 0.0f)) * 256.0f, 0.0f, 255.0f);
+		glm::vec3 albedo = glm::clamp(gBuffer.dev_albedo[index] * 256.0f, 0.0f, 255.0f);
+		glm::vec3 emission = glm::clamp(gBuffer.dev_emission[index] * 256.0f, 0.0f, 255.0f);
+		glm::vec2 velocity_pixel = glm::vec2(gBuffer.dev_velocity[index]) * (glm::vec2)resolution;
+		float depth = glm::clamp(abs(gBuffer.dev_z[index]) * 256.0f, 0.0f, 255.0f);
+		if (type == gTime)
+		{
+			pbo[index].w = 0;
+			pbo[index].x = timeToIntersect;
+			pbo[index].y = timeToIntersect;
+			pbo[index].z = timeToIntersect;
+		}
+		else if (type == gPosition)
+		{
+			pbo[index].w = 0;
+			pbo[index].x = pos.x;
+			pbo[index].y = pos.y;
+			pbo[index].z = pos.z;
+		}
+		else if (type == gNormal)
+		{
+			pbo[index].w = 0;
+			pbo[index].x = normal.x;
+			pbo[index].y = normal.y;
+			pbo[index].z = normal.z;
+		}
+		else if (type == gVelocity)
+		{
+			pbo[index].w = 0;
+			pbo[index].x = velocity.x;
+			pbo[index].y = velocity.y;
+			pbo[index].z = velocity.z;
+		}
+		else if (type == gAlbedo)
+		{
+			pbo[index].w = 0;
+			pbo[index].x = albedo.x;
+			pbo[index].y = albedo.y;
+			pbo[index].z = albedo.z;
+		}
+		else if(type == gEmission)
+		{
+			pbo[index].w = 0;
+			pbo[index].x = emission.x;
+			pbo[index].y = emission.y;
+			pbo[index].z = emission.z;
+		}
+		else if (type == gDepth)
+		{
+			pbo[index].w = 0;
+			pbo[index].x = depth;
+			pbo[index].y = depth;
+			pbo[index].z = depth;
+		}
+	}
+}
+
 static Scene* hst_scene = NULL;
 static GuiDataContainer* guiData = NULL;
-static glm::vec3* dev_image = NULL;
+static glm::vec3* dev_image0 = NULL;
+static glm::vec3* dev_image1 = NULL;
 static Object* dev_objs = NULL;
 static Material* dev_materials = NULL;
 static BVHGPUNode* dev_bvhArray = NULL;
@@ -114,6 +227,33 @@ static ShadeableIntersection* dev_pathCache = NULL;
 static ShadeableIntersection* dev_intersections1 = NULL;
 static ShadeableIntersection* dev_intersections2 = NULL;
 static ShadeableIntersection* dev_intersectionCache = NULL;
+static int* dev_rayValid;
+static int* dev_rayIndex;
+
+static float* dev_g_t = NULL;
+static glm::vec3* dev_g_emission = NULL;
+static glm::vec3* dev_g_albedo = NULL;
+#if OCT_ENCODE_NORMAL
+static glm::vec2* dev_g_normal = NULL;
+static glm::vec2* dev_prev_normal = NULL;
+#else
+static glm::vec3* dev_g_normal = NULL;
+static glm::vec3* dev_prev_normal = NULL;
+#endif
+static glm::vec3* dev_g_position = NULL;
+static glm::vec2* dev_g_velocity = NULL;
+static float* dev_g_z = NULL;
+static float* dev_prev_z = NULL;
+static glm::vec2* dev_g_znormalfwidth = NULL;
+static int* dev_g_primID = NULL;
+static int* dev_prev_primID = NULL;
+
+static glm::vec4* dev_illum0 = NULL;
+static glm::vec2* dev_moments0 = NULL;
+static float* dev_histLen0 = NULL;
+static glm::vec4* dev_illum1 = NULL;
+static glm::vec2* dev_moments1 = NULL;
+static float* dev_histLen1 = NULL;
 // TODO: static variables for device memory, any extra info you need, etc
 // ...
 
@@ -128,8 +268,75 @@ void pathtraceInit(Scene* scene) {
 	const Camera& cam = hst_scene->state.camera;
 	const int pixelcount = cam.resolution.x * cam.resolution.y;
 
-	cudaMalloc(&dev_image, pixelcount * sizeof(glm::vec3));
-	cudaMemset(dev_image, 0, pixelcount * sizeof(glm::vec3));
+	cudaMalloc(&dev_image0, pixelcount * sizeof(glm::vec3));
+	cudaMemset(dev_image0, 0, pixelcount * sizeof(glm::vec3));
+
+	cudaMalloc(&dev_image1, pixelcount * sizeof(glm::vec3));
+	cudaMemset(dev_image1, 0, pixelcount * sizeof(glm::vec3));
+
+	cudaMalloc(&dev_g_t, pixelcount * sizeof(float));
+	cudaMemset(dev_g_t, 0, pixelcount * sizeof(float));
+
+	cudaMalloc(&dev_g_z, pixelcount * sizeof(float));
+	cudaMemset(dev_g_z, 0, pixelcount * sizeof(float));
+
+	cudaMalloc(&dev_prev_z, pixelcount * sizeof(float));
+	cudaMemset(dev_prev_z, 0, pixelcount * sizeof(float));
+
+	cudaMalloc(&dev_g_emission, pixelcount * sizeof(glm::vec3));
+	cudaMemset(dev_g_emission, 0, pixelcount * sizeof(glm::vec3));
+
+	cudaMalloc(&dev_g_albedo, pixelcount * sizeof(glm::vec3));
+	cudaMemset(dev_g_albedo, 0, pixelcount * sizeof(glm::vec3));
+#if OCT_ENCODE_NORMAL
+	cudaMalloc(&dev_g_normal, pixelcount * sizeof(glm::vec2));
+	cudaMemset(dev_g_normal, 0, pixelcount * sizeof(glm::vec2));
+#else
+	cudaMalloc(&dev_g_normal, pixelcount * sizeof(glm::vec3));
+	cudaMemset(dev_g_normal, 0, pixelcount * sizeof(glm::vec3));
+#endif
+
+	cudaMalloc(&dev_prev_normal, pixelcount * sizeof(glm::vec3));
+	cudaMemset(dev_prev_normal, 0, pixelcount * sizeof(glm::vec3));
+
+	cudaMalloc(&dev_g_position, pixelcount * sizeof(glm::vec3));
+	cudaMemset(dev_g_position, 0, pixelcount * sizeof(glm::vec3));
+
+	cudaMalloc(&dev_g_velocity, pixelcount * sizeof(glm::vec2));
+	cudaMemset(dev_g_velocity, 0, pixelcount * sizeof(glm::vec2));
+
+	cudaMalloc(&dev_g_znormalfwidth, pixelcount * sizeof(glm::vec2));
+	cudaMemset(dev_g_znormalfwidth, 0, pixelcount * sizeof(glm::vec2));
+
+	cudaMalloc(&dev_g_znormalfwidth, pixelcount * sizeof(glm::vec2));
+	cudaMemset(dev_g_znormalfwidth, 0, pixelcount * sizeof(glm::vec2));
+
+	cudaMalloc(&dev_g_primID, pixelcount * sizeof(int));
+	cudaMemset(dev_g_primID, -1, pixelcount * sizeof(int));
+
+	cudaMalloc(&dev_prev_primID, pixelcount * sizeof(int));
+	cudaMemset(dev_prev_primID, -1, pixelcount * sizeof(int));
+
+	cudaMalloc(&dev_illum0, pixelcount * sizeof(glm::vec4));
+	cudaMemset(dev_illum0, 0, pixelcount * sizeof(glm::vec4));
+
+	cudaMalloc(&dev_moments0, pixelcount * sizeof(glm::vec2));
+	cudaMemset(dev_moments0, 0, pixelcount * sizeof(glm::vec2));
+
+	cudaMalloc(&dev_histLen0, pixelcount * sizeof(float));
+	cudaMemset(dev_histLen0, 0, pixelcount * sizeof(float));
+
+	cudaMalloc(&dev_illum1, pixelcount * sizeof(glm::vec4));
+	cudaMemset(dev_illum1, 0, pixelcount * sizeof(glm::vec4));
+
+	cudaMalloc(&dev_moments1, pixelcount * sizeof(glm::vec2));
+	cudaMemset(dev_moments1, 0, pixelcount * sizeof(glm::vec2));
+
+	cudaMalloc(&dev_histLen1, pixelcount * sizeof(float));
+	cudaMemset(dev_histLen1, 0, pixelcount * sizeof(float));
+
+	cudaMalloc(&dev_rayValid, sizeof(int) * pixelcount);
+	cudaMalloc(&dev_rayIndex, sizeof(int) * pixelcount);
 
 	cudaMalloc(&dev_paths1, pixelcount * sizeof(PathSegment));
 	cudaMalloc(&dev_paths2, pixelcount * sizeof(PathSegment));
@@ -200,8 +407,72 @@ void pathtraceInit(Scene* scene) {
 	checkCUDAError("pathtraceInit");
 }
 
+void pathtraceClear()
+{
+	const Camera& cam = hst_scene->state.camera;
+	const int pixelcount = cam.resolution.x * cam.resolution.y;
+	cudaMemset(dev_image0, 0, pixelcount * sizeof(glm::vec3));
+	cudaMemset(dev_g_t, 0, pixelcount * sizeof(float));
+	cudaMemset(dev_g_z, 0, pixelcount * sizeof(float));
+	cudaMemset(dev_g_emission, 0, pixelcount * sizeof(glm::vec3));
+	cudaMemset(dev_g_albedo, 0, pixelcount * sizeof(glm::vec3));
+#if OCT_ENCODE_NORMAL
+	cudaMemset(dev_g_normal, 0, pixelcount * sizeof(glm::vec2));
+#else
+	cudaMemset(dev_g_normal, 0, pixelcount * sizeof(glm::vec3));
+#endif
+	cudaMemset(dev_g_position, 0, pixelcount * sizeof(glm::vec3));
+	cudaMemset(dev_g_velocity, 0, pixelcount * sizeof(glm::vec2));
+	cudaMemset(dev_g_znormalfwidth, 0, pixelcount * sizeof(glm::vec2));
+	cudaMemset(dev_g_primID, -1, pixelcount * sizeof(int));
+	cudaMemset(dev_prev_primID, -1, pixelcount * sizeof(int));
+	cudaMemset(dev_intersections1, 0, pixelcount * sizeof(ShadeableIntersection));
+	checkCUDAError("pathtraceClear");
+}
+
+void denoiseClear()
+{
+	const Camera& cam = hst_scene->state.camera;
+	const int pixelcount = cam.resolution.x * cam.resolution.y;
+	cudaMemset(dev_illum0, 0, pixelcount * sizeof(glm::vec4));
+	cudaMemset(dev_moments0, 0, pixelcount * sizeof(glm::vec2));
+	cudaMemset(dev_histLen0, 0, pixelcount * sizeof(float));
+	cudaMemset(dev_illum1, 0, pixelcount * sizeof(glm::vec4));
+	cudaMemset(dev_moments1, 0, pixelcount * sizeof(glm::vec2));
+	cudaMemset(dev_histLen1, 0, pixelcount * sizeof(float));
+#if OCT_ENCODE_NORMAL
+	cudaMemset(dev_prev_normal, 0, pixelcount * sizeof(glm::vec2));
+#else
+	cudaMemset(dev_prev_normal, 0, pixelcount * sizeof(glm::vec3));
+#endif
+	cudaMemset(dev_prev_z, 0, pixelcount * sizeof(float));
+	cudaMemset(dev_prev_primID, 0, pixelcount * sizeof(int));
+	checkCUDAError("denoiseClear");
+}
+
 void pathtraceFree(Scene* scene) {
-	cudaFree(dev_image);  // no-op if dev_image is null
+	cudaFree(dev_image0);  // no-op if dev_image is null
+
+	cudaFree(dev_g_t);
+	cudaFree(dev_g_z);
+	cudaFree(dev_g_emission);
+	cudaFree(dev_g_albedo);
+	cudaFree(dev_g_normal);
+	cudaFree(dev_g_position);
+	cudaFree(dev_g_velocity);
+	cudaFree(dev_g_znormalfwidth);
+
+	cudaFree(dev_illum0);
+	cudaFree(dev_illum1);
+	cudaFree(dev_moments0);
+	cudaFree(dev_moments1);
+	cudaFree(dev_histLen0);
+	cudaFree(dev_histLen1);
+	cudaFree(dev_prev_normal);
+	cudaFree(dev_prev_z);
+
+	cudaFree(dev_rayIndex);
+	cudaFree(dev_rayValid);
 	cudaFree(dev_paths1);
 	cudaFree(dev_paths2);
 	cudaFree(dev_objs);
@@ -399,6 +670,7 @@ __global__ void compute_intersection(
 		if (t_min == FLT_MAX)//hits nothing
 		{
 			rayValid[path_index] = 0;
+			intersections[path_index].t = -1.0f;
 			if (skyboxTex)
 			{
 				glm::vec2 uv = util_sample_spherical_map(glm::normalize(pathSegment.ray.direction));
@@ -446,7 +718,7 @@ __global__ void compute_intersection_bvh_stackless(
 	int depth
 	, int num_paths
 	, PathSegment* pathSegments
-	, SceneInfoDev dev_sceneInfo
+	, SceneInfoPtrs dev_sceneInfo
 	, ShadeableIntersection* intersections
 	, int* rayValid
 	, glm::vec3* image
@@ -534,6 +806,7 @@ __global__ void compute_intersection_bvh_stackless(
 		}
 	}
 	rayValid[path_index] = intersected;
+	intersections[path_index].t = -1.0f;
 	if (intersected)
 	{
 		intersections[path_index] = tmpIntersection;
@@ -554,7 +827,7 @@ __global__ void compute_intersection_bvh_stackless_mtbvh(
 	int depth
 	, int num_paths
 	, PathSegment* pathSegments
-	, SceneInfoDev dev_sceneInfo
+	, SceneInfoPtrs dev_sceneInfo
 	, ShadeableIntersection* intersections
 	, int* rayValid
 	, glm::vec3* image
@@ -597,6 +870,7 @@ __global__ void compute_intersection_bvh_stackless_mtbvh(
 	}
 	
 	rayValid[path_index] = intersected;
+	intersections[path_index].t = -1.0f;
 	if (intersected)
 	{
 		intersections[path_index] = tmpIntersection;
@@ -612,74 +886,54 @@ __global__ void compute_intersection_bvh_stackless_mtbvh(
 	}
 }
 
-__global__ void draw_gbuffer(
-	int num_paths
-	, PathSegment* pathSegments
-	, SceneInfoDev dev_sceneInfo
-	, SceneGbuffer gbuffer
-)
+
+
+__global__ void generateGBuffer(
+	int num_pixels,
+	PathSegment* pathSegments,
+	ShadeableIntersection* shadeableIntersections,
+	SceneInfoPtrs dev_sceneInfo,
+	SceneGbufferPtrs gbuffer,
+	RenderState state
+	)
 {
 	int path_index = blockIdx.x * blockDim.x + threadIdx.x;
-	if (path_index >= num_paths) return;
-	PathSegment& pathSegment = pathSegments[path_index];
-	Ray& ray = pathSegment.ray;
-	glm::vec3 rayDir = pathSegment.ray.direction;
-	glm::vec3 rayOri = pathSegment.ray.origin;
-	float x = fabs(rayDir.x), y = fabs(rayDir.y), z = fabs(rayDir.z);
-	int axis = x > y && x > z ? 0 : (y > z ? 1 : 2);
-	int sgn = rayDir[axis] > 0 ? 0 : 1;
-	int d = (axis << 1) + sgn;
-	const MTBVHGPUNode* currArray = dev_sceneInfo.dev_mtbvhArray + d * dev_sceneInfo.bvhDataSize;
-	int curr = 0;
-	ShadeableIntersection tmpIntersection;
-	tmpIntersection.t = 1e37f;
-	bool intersected = false;
-	while (curr >= 0 && curr < dev_sceneInfo.bvhDataSize)
+	if (path_index >= num_pixels) return;
+	ShadeableIntersection tmpIntersection = shadeableIntersections[path_index];
+	PathSegment pathSegment = pathSegments[path_index];
+	int pixelIdx = pathSegment.pixelIndex;
+	gbuffer.dev_t[pixelIdx] = tmpIntersection.t;
+	
+	if (tmpIntersection.t < 0.0) return;
+	gbuffer.dev_normal[pixelIdx] = util_vec3_to_oct(tmpIntersection.surfaceNormal);
+	Material& mat = dev_sceneInfo.dev_materials[tmpIntersection.materialId];
+	glm::vec3 materialColor = mat.color;
+	if (mat.baseColorMap)
 	{
-		bool outside = true;
-		float boxt = boundingBoxIntersectionTest(currArray[curr].bbox, ray, outside);
-		if (!outside) boxt = EPSILON;
-		if (boxt > 0 && boxt < tmpIntersection.t)
-		{
-			if (currArray[curr].startPrim != -1)//leaf node
-			{
-				int start = currArray[curr].startPrim, end = currArray[curr].endPrim;
-				bool intersect = util_bvh_leaf_intersect(start, end, dev_sceneInfo, ray, &tmpIntersection);
-				intersected = intersected || intersect;
-			}
-			curr = currArray[curr].hitLink;
-		}
-		else
-		{
-			curr = currArray[curr].missLink;
-		}
+		float4 color = tex2D<float4>(mat.baseColorMap, tmpIntersection.uv.x, tmpIntersection.uv.y);
+		materialColor.x = color.x;
+		materialColor.y = color.y;
+		materialColor.z = color.z;
 	}
-	if (intersected)
-	{
-		int pixelIdx = pathSegment.pixelIndex;
-		gbuffer.dev_normal[pixelIdx] += tmpIntersection.surfaceNormal;
-		Material& mat = dev_sceneInfo.dev_materials[tmpIntersection.materialId];
-		glm::vec3 materialColor = mat.color;
-		if (mat.baseColorMap)
-		{
-			float4 color = tex2D<float4>(mat.baseColorMap, tmpIntersection.uv.x, tmpIntersection.uv.y);
-			materialColor.x = color.x;
-			materialColor.y = color.y;
-			materialColor.z = color.z;
-		}
-		gbuffer.dev_albedo[pixelIdx] += materialColor;
-	}
+	if (mat.emittance > 0.0f)
+		gbuffer.dev_emission[pixelIdx] = materialColor * mat.emittance;
 	else
-	{
-		if (dev_sceneInfo.skyboxObj)
-		{
-			glm::vec2 uv = util_sample_spherical_map(glm::normalize(rayDir));
-			float4 skyColorRGBA = tex2D<float4>(dev_sceneInfo.skyboxObj, uv.x, uv.y);
-			glm::vec3 skyColor = glm::vec3(skyColorRGBA.x, skyColorRGBA.y, skyColorRGBA.z);
-			gbuffer.dev_albedo[pathSegment.pixelIndex] += skyColor;
-		}
-	}
+		gbuffer.dev_albedo[pixelIdx] = materialColor;
+	
+	glm::vec2 currUV = glm::vec2(pixelIdx % state.camera.resolution.x, pixelIdx / state.camera.resolution.x) / glm::vec2(state.camera.resolution);
+	
+	/*glm::vec4 lastClipPos = state.prevViewProj * glm::vec4(tmpIntersection.worldPos, 1.0f);
+	glm::vec2 lastUV = glm::vec2(lastClipPos.x, lastClipPos.y) / lastClipPos.w;
+	lastUV = -lastUV;
+	lastUV = lastUV * 0.5f + 0.5f;*/
+	LastCameraInfo& lastCam = state.lastCamInfo;
+	glm::vec2 lastUV = util_get_last_uv(tmpIntersection.worldPos, lastCam.position, lastCam.view, lastCam.up, lastCam.right, state.camera.resolution, state.camera.pixelLength);
+	gbuffer.dev_velocity[pixelIdx] = currUV - lastUV;
+	gbuffer.dev_z[pixelIdx] = glm::dot(state.camera.view, tmpIntersection.worldPos - state.camera.position);
+	//gbuffer.dev_position[pixelIdx] = util_get_world_position(currUV, gbuffer.dev_z[pixelIdx], state.camera.position, state.camera.view, state.camera.up, state.camera.right, state.camera.resolution, state.camera.pixelLength);
+	gbuffer.dev_primID[pixelIdx] = tmpIntersection.primitiveId;
 }
+
 
 
 __global__ void scatter_on_intersection(
@@ -687,7 +941,7 @@ __global__ void scatter_on_intersection(
 	, int num_paths
 	, ShadeableIntersection* shadeableIntersections
 	, PathSegment* pathSegments
-	, SceneInfoDev sceneInfo
+	, SceneInfoPtrs sceneInfo
 	, int* rayValid
 	, glm::vec3* image
 )
@@ -825,7 +1079,7 @@ __global__ void scatter_on_intersection_mis(
 	, int num_paths
 	, ShadeableIntersection* shadeableIntersections
 	, PathSegment* pathSegments
-	, SceneInfoDev sceneInfo
+	, SceneInfoPtrs sceneInfo
 	, int* rayValid
 	, glm::vec3* image
 )
@@ -1052,7 +1306,7 @@ int compact_rays(int* rayValid,int* rayIndex,int numRays, bool sortByMat=false)
  * Wrapper for the __global__ call that sets up the kernel calls and does a ton
  * of memory management
  */
-void pathtrace(uchar4* pbo, int frame, int iter) {
+void pathtrace(int iter, bool drawGbuffer) {
 	const Camera& cam = hst_scene->state.camera;
 	const int pixelcount = cam.resolution.x * cam.resolution.y;
 
@@ -1095,7 +1349,7 @@ void pathtrace(uchar4* pbo, int frame, int iter) {
 	//   for you.
 
 	// TODO: perform one iteration of path tracing
-	SceneInfoDev dev_sceneInfo{};
+	SceneInfoPtrs dev_sceneInfo{};
 	dev_sceneInfo.dev_materials = dev_materials;
 	dev_sceneInfo.dev_objs = dev_objs;
 	dev_sceneInfo.objectsSize = hst_scene->objects.size();
@@ -1119,18 +1373,18 @@ void pathtrace(uchar4* pbo, int frame, int iter) {
 	dev_sceneInfo.dev_lights = dev_lights;
 	dev_sceneInfo.lightsSize = hst_scene->lights.size();
 
+	
 
 	generateRayFromCamera << <blocksPerGrid2d, blockSize2d >> > (cam, iter, MAX_DEPTH, dev_paths1);
 	checkCUDAError("generate camera ray");
 
 	int depth = 0;
 	PathSegment* dev_path_end = dev_paths1 + pixelcount;
-	int num_paths = dev_path_end - dev_paths1;
-	int* rayValid, * rayIndex;
+	int num_paths = pixelcount;
+	
 	
 	int numRays = num_paths;
-	cudaMalloc((void**)&rayValid, sizeof(int) * pixelcount);
-	cudaMalloc((void**)&rayIndex, sizeof(int) * pixelcount);
+	
 	
 	cudaDeviceSynchronize();
 	// --- PathSegment Tracing Stage ---
@@ -1162,8 +1416,8 @@ void pathtrace(uchar4* pbo, int frame, int iter) {
 				, dev_paths1
 				, dev_sceneInfo
 				, dev_intersections1
-				, rayValid
-				, dev_image
+				, dev_rayValid
+				, dev_image0
 				);
 #else
 			compute_intersection_bvh_stackless << <numblocksPathSegmentTracing, blockSize1d >> > (
@@ -1206,13 +1460,27 @@ void pathtrace(uchar4* pbo, int frame, int iter) {
 
 		cudaDeviceSynchronize();
 		checkCUDAError("trace one bounce");
-
+		if (depth == 0 && drawGbuffer)
+		{
+			SceneGbufferPtrs dev_gbuffer;
+			dev_gbuffer.dev_t = dev_g_t;
+			dev_gbuffer.dev_albedo = dev_g_albedo;
+			dev_gbuffer.dev_emission = dev_g_emission;
+			dev_gbuffer.dev_normal = dev_g_normal;
+			dev_gbuffer.dev_velocity = dev_g_velocity;
+//			dev_gbuffer.dev_position = dev_g_position;
+			dev_gbuffer.dev_z = dev_g_z;
+			dev_gbuffer.dev_primID = dev_g_primID;
+			generateGBuffer << <numblocksPathSegmentTracing, blockSize1d >> > (pixelcount, dev_paths1, dev_intersections1, dev_sceneInfo, dev_gbuffer, hst_scene->state);
+		}
+		cudaDeviceSynchronize();
+		checkCUDAError("generate gbuffer");
 		depth++;
 
 #if SORT_BY_MATERIAL_TYPE
 		numRays = compact_rays(rayValid, rayIndex, numRays, true);
 #else
-		numRays = compact_rays(rayValid, rayIndex, numRays);
+		numRays = compact_rays(dev_rayValid, dev_rayIndex, numRays);
 #endif
 
 		// TODO:
@@ -1232,8 +1500,8 @@ void pathtrace(uchar4* pbo, int frame, int iter) {
 			dev_intersections1,
 			dev_paths1,
 			dev_sceneInfo,
-			rayValid,
-			dev_image
+			dev_rayValid,
+			dev_image0
 			);
 #else
 		scatter_on_intersection << <numblocksPathSegmentTracing, blockSize1d >> > (
@@ -1242,14 +1510,14 @@ void pathtrace(uchar4* pbo, int frame, int iter) {
 			dev_intersections1,
 			dev_paths1,
 			dev_sceneInfo,
-			rayValid,
-			dev_image
+			dev_rayValid,
+			dev_image0
 			);
 #endif
 		cudaDeviceSynchronize();
 		checkCUDAError("scatter_on_intersection_mis");
 
-		numRays = compact_rays(rayValid, rayIndex, numRays);
+		numRays = compact_rays(dev_rayValid, dev_rayIndex, numRays);
 
 		if (guiData != NULL)
 		{
@@ -1257,84 +1525,187 @@ void pathtrace(uchar4* pbo, int frame, int iter) {
 		}
 	}
 
-	if (0)
-	{
-		// Assemble this iteration and apply it to the image
-		dim3 numBlocksPixels = (numRays + blockSize1d - 1) / blockSize1d;
-		finalGather << <numBlocksPixels, blockSize1d >> > (numRays, dev_image, dev_paths1);
-	}
+	//if (0)
+	//{
+	//	// Assemble this iteration and apply it to the image
+	//	dim3 numBlocksPixels = (numRays + blockSize1d - 1) / blockSize1d;
+	//	finalGather << <numBlocksPixels, blockSize1d >> > (numRays, dev_image0, dev_paths1);
+	//}
 
-	///////////////////////////////////////////////////////////////////////////
-
-	// Send results to OpenGL buffer for rendering
-	sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, cam.resolution, iter, dev_image);
-
+	
 	// Retrieve image from GPU
-	cudaMemcpy(hst_scene->state.image.data(), dev_image,
+	cudaMemcpy(hst_scene->state.image.data(), dev_image0,
 		pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
-
-	cudaFree(rayValid);
-	cudaFree(rayIndex);
-
+	
 	checkCUDAError("pathtrace");
 }
 
-void DrawGbuffer(int numIter)
+void showRenderedImage(uchar4* pbo, glm::ivec2 resolution, int iter, bool denoise)
 {
-	if (!USE_BVH) throw;
-
-	const Camera& cam = hst_scene->state.camera;
-	const int pixelcount = cam.resolution.x * cam.resolution.y;
-
-	SceneInfoDev dev_sceneInfo{};
-	dev_sceneInfo.dev_materials = dev_materials;
-	dev_sceneInfo.dev_objs = dev_objs;
-	dev_sceneInfo.objectsSize = hst_scene->objects.size();
-	dev_sceneInfo.modelInfo.dev_triangles = dev_triangles;
-	dev_sceneInfo.modelInfo.dev_vertices = dev_vertices;
-	dev_sceneInfo.modelInfo.dev_normals = dev_normals;
-	dev_sceneInfo.modelInfo.dev_uvs = dev_uvs;
-	dev_sceneInfo.modelInfo.dev_tangents = dev_tangents;
-	dev_sceneInfo.modelInfo.dev_fsigns = dev_fsigns;
-	dev_sceneInfo.dev_primitives = dev_primitives;
-#if USE_BVH
-#if MTBVH
-	dev_sceneInfo.dev_mtbvhArray = dev_mtbvhArray;
-	dev_sceneInfo.bvhDataSize = hst_scene->MTBVHArray.size() / 6;
-#else
-	dev_sceneInfo.dev_bvhArray = dev_bvhArray;
-	dev_sceneInfo.bvhDataSize = hst_scene->bvhTreeSize;
-#endif
-#endif // 
-	dev_sceneInfo.skyboxObj = hst_scene->skyboxTextureObj;
-
 	const dim3 blockSize2d(8, 8);
 	const dim3 blocksPerGrid2d(
-		(cam.resolution.x + blockSize2d.x - 1) / blockSize2d.x,
-		(cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
-	
-	const int blockSize1d = 128;
-	dim3 numblocksPathSegmentTracing = (pixelcount + blockSize1d - 1) / blockSize1d;
-	SceneGbuffer dev_gbuffer;
-	glm::vec3* dev_albedo,*dev_normal;
-	cudaMalloc(&dev_albedo, pixelcount * sizeof(glm::vec3));
-	cudaMalloc(&dev_normal, pixelcount * sizeof(glm::vec3));
-	dev_gbuffer.dev_albedo = dev_albedo;
-	dev_gbuffer.dev_normal = dev_normal;
-	for (int i = 0; i < numIter; i++)
-	{
-		generateRayFromCamera << <blocksPerGrid2d, blockSize2d >> > (cam, i, MAX_DEPTH, dev_paths1);
-		draw_gbuffer << <numblocksPathSegmentTracing, blockSize1d >> > (pixelcount, dev_paths1, dev_sceneInfo, dev_gbuffer);
-	}
-	hst_scene->state.albedo.resize(pixelcount);
-	hst_scene->state.normal.resize(pixelcount);
-	cudaMemcpy(hst_scene->state.albedo.data(), dev_albedo, pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
-	cudaMemcpy(hst_scene->state.normal.data(), dev_normal, pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
-	cudaFree(dev_albedo);
-	cudaFree(dev_normal);
-	for (int i = 0; i < pixelcount; i++)
-	{
-		hst_scene->state.albedo[i] /= (float)numIter;
-		hst_scene->state.normal[i] /= (float)numIter;
-	}
+		(resolution.x + blockSize2d.x - 1) / blockSize2d.x,
+		(resolution.y + blockSize2d.y - 1) / blockSize2d.y);
+	// Send results to OpenGL buffer for rendering
+	sendImageToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, resolution, iter, dev_image0);
 }
+
+void showGBuffer(uchar4* pbo, glm::ivec2 resolution, GBufferVisualizationType gbufType, int iter)
+{
+	SceneGbufferPtrs dev_gbuffer;
+	dev_gbuffer.dev_t = dev_g_t;
+	dev_gbuffer.dev_albedo = dev_g_albedo;
+	dev_gbuffer.dev_emission = dev_g_emission;
+	dev_gbuffer.dev_normal = dev_g_normal;
+	dev_gbuffer.dev_velocity = dev_g_velocity;
+//	dev_gbuffer.dev_position = dev_g_position;
+	dev_gbuffer.dev_z = dev_g_z;
+	dev_gbuffer.dev_primID = dev_g_primID;
+	const dim3 blockSize2d(8, 8);
+	const dim3 blocksPerGrid2d(
+		(resolution.x + blockSize2d.x - 1) / blockSize2d.x,
+		(resolution.y + blockSize2d.y - 1) / blockSize2d.y);
+	int pixelCount = resolution.x * resolution.y;
+	gbufferToPBO << <blocksPerGrid2d, blockSize2d >> > (pbo, resolution, dev_gbuffer, gbufType, hst_scene->state);
+}
+
+void svgfDenoise(int iter)
+{
+	const glm::ivec2& resolution = hst_scene->state.camera.resolution;
+	SceneGbufferPtrs dev_gbuffer;
+	dev_gbuffer.dev_t = dev_g_t;
+	dev_gbuffer.dev_albedo = dev_g_albedo;
+	dev_gbuffer.dev_emission = dev_g_emission;
+	dev_gbuffer.dev_normal = dev_g_normal;
+	dev_gbuffer.dev_velocity = dev_g_velocity;
+	dev_gbuffer.dev_z = dev_g_z;
+	dev_gbuffer.dev_znormalfwidth = dev_g_znormalfwidth;
+	dev_gbuffer.dev_primID = dev_g_primID;
+	computeDepthNormalFwidth(resolution, dev_gbuffer);
+	cudaDeviceSynchronize();
+	checkCUDAError("Compute fwidth");
+	SVGFBufferPtrs dev_prevSVGFBuffer;
+	dev_prevSVGFBuffer.dev_history_len = dev_histLen0;
+	dev_prevSVGFBuffer.dev_illum = dev_illum0;
+	dev_prevSVGFBuffer.dev_moments = dev_moments0;
+	dev_prevSVGFBuffer.dev_normal = dev_prev_normal;
+	dev_prevSVGFBuffer.dev_z = dev_prev_z;
+	dev_prevSVGFBuffer.dev_primID = dev_prev_primID;
+	SVGFBufferPtrs dev_currSVGFBuffer;
+	dev_currSVGFBuffer.dev_history_len = dev_histLen1;
+	dev_currSVGFBuffer.dev_illum = dev_illum1;
+	dev_currSVGFBuffer.dev_moments = dev_moments1;
+	SVGFAccumulation(resolution, dev_gbuffer, dev_prevSVGFBuffer, dev_currSVGFBuffer, dev_image0, iter);
+	cudaDeviceSynchronize();
+	checkCUDAError("SVGFAccumulation");
+	//std::swap(dev_illum0, dev_illum1);
+	
+	
+	
+	SVGFBilateral(resolution, dev_gbuffer, dev_currSVGFBuffer, dev_prevSVGFBuffer.dev_illum);
+	cudaDeviceSynchronize();
+	checkCUDAError("SVGFBilateral");
+	
+	
+	for (int i = 0; i < 5; i++)
+	{
+		dev_currSVGFBuffer.dev_illum = dev_illum0;
+		SVGFWavelet(resolution, dev_gbuffer, dev_currSVGFBuffer, i, dev_illum1);
+		std::swap(dev_illum0, dev_illum1);
+	}
+	cudaDeviceSynchronize();
+	checkCUDAError("SVGFWavelet");
+	
+	
+	SVGFCombine(resolution, dev_gbuffer, dev_illum0, dev_image0);
+#if OCT_ENCODE_NORMAL
+	cudaMemcpy(dev_prev_normal, dev_g_normal, resolution.x * resolution.y * sizeof(glm::vec2), cudaMemcpyDeviceToDevice);
+#else
+	cudaMemcpy(dev_prev_normal, dev_g_normal, resolution.x * resolution.y * sizeof(glm::vec3), cudaMemcpyDeviceToDevice);
+#endif
+	cudaMemcpy(dev_prev_z, dev_g_z, resolution.x * resolution.y * sizeof(float), cudaMemcpyDeviceToDevice);
+	cudaMemcpy(dev_prev_primID, dev_g_primID, resolution.x * resolution.y * sizeof(int), cudaMemcpyDeviceToDevice);
+	std::swap(dev_moments0, dev_moments1);
+	std::swap(dev_histLen0, dev_histLen1);
+}
+
+void eawDenoise(int iter, EAWParams params, bool edgeAwared)
+{
+	const glm::ivec2& resolution = hst_scene->state.camera.resolution;
+	cudaMemset(dev_image1, 0, resolution.x * resolution.y * sizeof(glm::vec3));
+	SceneGbufferPtrs dev_gbuffer;
+	dev_gbuffer.dev_t = dev_g_t;
+	dev_gbuffer.dev_albedo = dev_g_albedo;
+	dev_gbuffer.dev_emission = dev_g_emission;
+	dev_gbuffer.dev_normal = dev_g_normal;
+	dev_gbuffer.dev_velocity = dev_g_velocity;
+	dev_gbuffer.dev_z = dev_g_z;
+	dev_gbuffer.dev_znormalfwidth = dev_g_znormalfwidth;
+	dev_gbuffer.dev_primID = dev_g_primID;
+	for (int i = 0; i < 5; i++)
+	{
+		EAWFilter(resolution, dev_image0, dev_image1, dev_gbuffer, params, edgeAwared, i, i == 0 ? iter : 1, hst_scene->state.camera);
+		std::swap(dev_image0, dev_image1);
+	}
+	
+}
+
+//void DrawGbuffer(int numIter)
+//{
+//	if (!USE_BVH) throw;
+//
+//	const Camera& cam = hst_scene->state.camera;
+//	const int pixelcount = cam.resolution.x * cam.resolution.y;
+//
+//	SceneInfoPtrs dev_sceneInfo{};
+//	dev_sceneInfo.dev_materials = dev_materials;
+//	dev_sceneInfo.dev_objs = dev_objs;
+//	dev_sceneInfo.objectsSize = hst_scene->objects.size();
+//	dev_sceneInfo.modelInfo.dev_triangles = dev_triangles;
+//	dev_sceneInfo.modelInfo.dev_vertices = dev_vertices;
+//	dev_sceneInfo.modelInfo.dev_normals = dev_normals;
+//	dev_sceneInfo.modelInfo.dev_uvs = dev_uvs;
+//	dev_sceneInfo.modelInfo.dev_tangents = dev_tangents;
+//	dev_sceneInfo.modelInfo.dev_fsigns = dev_fsigns;
+//	dev_sceneInfo.dev_primitives = dev_primitives;
+//#if USE_BVH
+//#if MTBVH
+//	dev_sceneInfo.dev_mtbvhArray = dev_mtbvhArray;
+//	dev_sceneInfo.bvhDataSize = hst_scene->MTBVHArray.size() / 6;
+//#else
+//	dev_sceneInfo.dev_bvhArray = dev_bvhArray;
+//	dev_sceneInfo.bvhDataSize = hst_scene->bvhTreeSize;
+//#endif
+//#endif // 
+//	dev_sceneInfo.skyboxObj = hst_scene->skyboxTextureObj;
+//
+//	const dim3 blockSize2d(8, 8);
+//	const dim3 blocksPerGrid2d(
+//		(cam.resolution.x + blockSize2d.x - 1) / blockSize2d.x,
+//		(cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
+//	
+//	const int blockSize1d = 128;
+//	dim3 numblocksPathSegmentTracing = (pixelcount + blockSize1d - 1) / blockSize1d;
+//	SceneGbufferPtrs dev_gbuffer;
+//	glm::vec3* dev_albedo,*dev_normal;
+//	cudaMalloc(&dev_albedo, pixelcount * sizeof(glm::vec3));
+//	cudaMalloc(&dev_normal, pixelcount * sizeof(glm::vec3));
+//	dev_gbuffer.dev_albedo = dev_albedo;
+//	dev_gbuffer.dev_normal = dev_normal;
+//	for (int i = 0; i < numIter; i++)
+//	{
+//		generateRayFromCamera << <blocksPerGrid2d, blockSize2d >> > (cam, i, MAX_DEPTH, dev_paths1);
+//		draw_gbuffer_from_scratch << <numblocksPathSegmentTracing, blockSize1d >> > (pixelcount, dev_paths1, dev_sceneInfo, dev_gbuffer);
+//	}
+//	hst_scene->state.albedo.resize(pixelcount);
+//	hst_scene->state.normal.resize(pixelcount);
+//	cudaMemcpy(hst_scene->state.albedo.data(), dev_albedo, pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
+//	cudaMemcpy(hst_scene->state.normal.data(), dev_normal, pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
+//	cudaFree(dev_albedo);
+//	cudaFree(dev_normal);
+//	for (int i = 0; i < pixelcount; i++)
+//	{
+//		hst_scene->state.albedo[i] /= (float)numIter;
+//		hst_scene->state.normal[i] /= (float)numIter;
+//	}
+//}
